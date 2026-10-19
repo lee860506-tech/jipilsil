@@ -23,7 +23,8 @@ const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore
 let toastT;
 const STK = { fighting: 'img/fighting.webp', great: 'img/great.webp', oops: 'img/oops.webp', focus: 'img/focus.webp' };
 function toast(msg, ms = 2800, stk) {
-  const t = $('#toast'); t.innerHTML = (stk ? `<img class="t-stk" src="${STK[stk]}" alt="">` : '') + `<span>${esc(msg)}</span>`; t.hidden = false; t.classList.add('on');
+  const t = $('#toast');
+  try { if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } else { const d = $('#dlg'); (d.open ? d : document.body).appendChild(t); } } catch (e) {} t.innerHTML = (stk ? `<img class="t-stk" src="${STK[stk]}" alt="">` : '') + `<span>${esc(msg)}</span>`; t.hidden = false; t.classList.add('on');
   clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.hidden = true, 250); }, ms);
 }
 function dialog({ title, html = '', buttons = [{ label: '확인', value: 'ok', cls: 'gold' }], wide = false, onOpen }) {
@@ -612,9 +613,11 @@ async function openSettings() {
   const r = await dialog({ title: '설정', wide: true, html: `
     <section class="set"><h4>☁ 구글 드라이브</h4>
       <p class="mute small">원고는 <b>이 기기</b>와 <b>아라 님 드라이브</b>에만 저장돼요. 앱 권한은 「이 앱이 만든 파일만」(drive.file)이라 다른 드라이브 파일은 볼 수 없어요. 드라이브에는 「${esc(window.YW_CONFIG?.DRIVE_ROOT_NAME || '집필실')}/작품/01화」 구글 문서로, 목록표·인물표는 구글 시트로, 사진은 「아이디어 사진」 폴더에 저장돼요.</p>
-      <label class="fld">OAuth 클라이언트 ID <input id="setCid" value="${esc(cid)}" placeholder="${def ? '기본값 사용 중' : '1234…apps.googleusercontent.com'}" autocomplete="off" spellcheck="false"></label>
+      <label class="fld">OAuth 클라이언트 ID <input id="setCid" value="${esc(cid || def)}" placeholder="1234…apps.googleusercontent.com" autocomplete="off" spellcheck="false" inputmode="url"></label>
+      <p class="small mute" id="setCidNote">${def && (!cid || cid === def) ? '✓ 기본 ID가 들어 있어요. 그대로 「구글 드라이브 연결」을 누르면 돼요.' : cid ? '이 기기에 직접 넣은 ID를 쓰고 있어요.' : 'ID를 붙여 넣은 뒤 연결을 눌러 주세요.'}</p>
       <p class="small"><a href="https://github.com/lee860506-tech/jipilsil/blob/main/DRIVE_SETUP.md" target="_blank" rel="noopener">클라이언트 ID 만드는 방법 (10분)</a></p>
       <div class="row">${linked ? `<button type="button" class="btn gold" id="setConnect">${Drive.hasValidToken() ? '✓ 연결됨 · 다시 연결' : '다시 연결'}</button><button type="button" class="btn" id="setSync">지금 동기화</button><button type="button" class="btn danger" id="setDisc">연결 끊기</button>` : `<button type="button" class="btn gold" id="setConnect">구글 드라이브 연결</button>`}</div>
+      <div class="set-msg" id="setMsg" role="status" aria-live="polite" hidden></div>
     </section>
     <section class="set"><h4>✒ 집필 화면</h4>
       <div class="row wrap"><label class="fld">테마 <select id="setTheme"><option value="light">라벤더 (밝게)</option><option value="dark">밤 (어둡게)</option><option value="sepia">세피아</option></select></label>
@@ -631,12 +634,20 @@ async function openSettings() {
     onOpen: f => {
       f.querySelector('#setTheme').value = st.theme; f.querySelector('#setFont').value = st.font; f.querySelector('#setLh').value = String(st.lineH); f.querySelector('#setSnap').value = String(st.snapMin);
       f.querySelector('#setTheme').onchange = e => { st.theme = e.target.value; saveSettings(); };
-      const saveCid = async () => { const v = f.querySelector('#setCid').value.trim(); await db.kv.set('clientId', v); };
+      const cidOf = () => f.querySelector('#setCid').value.trim() || def;
+      const saveCid = () => { const v = cidOf(); S.clientId = v; return db.kv.set('clientId', v === def ? '' : v); };
       f.querySelector('#setCid').addEventListener('change', saveCid);
-      f.querySelector('#setConnect').onclick = async () => {
-        await saveCid();
-        try { await Drive.connect(); toast('구글 드라이브에 연결했어요'); $('#dlg').close('cancel'); runSync('manual'); }
-        catch (e) { toast(e.message, 5000); }
+      Drive.prepare().catch(() => {}); // 미리 구글 로그인 스크립트 불러오기
+      const msg = (t, kind) => { const m = f.querySelector('#setMsg'); if (!m) return; m.hidden = !t; m.className = 'set-msg ' + (kind || ''); m.innerHTML = kind === 'err' ? `<img src="${STK.oops}" alt=""><span>${esc(t)}<br><b>아쉽다, 다시 해보자!</b></span>` : `<span>${esc(t)}</span>`; };
+      const btn = f.querySelector('#setConnect');
+      btn.onclick = () => {
+        const id = cidOf(); saveCid(); // 저장은 뒤에서 — 로그인 창은 클릭 즉시 (팝업 차단 방지)
+        const go = () => Drive.connectNow(id);
+        let p = go();
+        msg('구글 로그인 창을 여는 중… 새 창에서 계정을 고르고 「계속」을 눌러 주세요.'); btn.disabled = true;
+        p = p.catch(async e => { if (!e.notReady) throw e; msg('구글 로그인 준비 중…'); await Drive.loadGIS(); return go(); });
+        p.then(() => { btn.disabled = false; toast('구글 드라이브에 연결했어요', 3000, 'great'); $('#dlg').close('cancel'); runSync('manual'); updateStatus(); })
+         .catch(e => { btn.disabled = false; msg(e.message, 'err'); toast(e.message, 6000, 'oops'); });
       };
       f.querySelector('#setSync') && (f.querySelector('#setSync').onclick = () => { $('#dlg').close('cancel'); runSync('manual'); });
       f.querySelector('#setDisc') && (f.querySelector('#setDisc').onclick = async () => { if (await confirmBox('연결 끊기', '드라이브 연결을 끊을까요? 원고는 기기와 드라이브 양쪽에 그대로 남아요.', '끊기', 'danger')) { await Drive.disconnect(); updateStatus(); toast('연결을 끊었어요'); } });
@@ -644,7 +655,7 @@ async function openSettings() {
     } });
   if (r === 'ok') {
     const f = $('#dlgForm');
-    await db.kv.set('clientId', f.querySelector('#setCid')?.value.trim() || '');
+    { const v = f.querySelector('#setCid')?.value.trim() || def; S.clientId = v; await db.kv.set('clientId', v === def ? '' : v); }
     Object.assign(st, { theme: f.querySelector('#setTheme').value, font: f.querySelector('#setFont').value, lineH: +f.querySelector('#setLh').value, snapMin: +f.querySelector('#setSnap').value, tidy: f.querySelector('#setTidy').checked });
     saveSettings(); toast('설정을 저장했어요');
   }
@@ -656,7 +667,7 @@ async function backupAll() {
 }
 
 document.addEventListener('click', async e => {
-  if (e.target.id === 'btnReauth') { try { await Drive.connect({ silent: true }); runSync('manual'); } catch (er) { toast(er.message, 5000); } }
+  if (e.target.id === 'btnReauth') { try { await Drive.connectNow(S.clientId, { silent: true }).catch(async er => { if (!er.notReady) throw er; await Drive.loadGIS(); return Drive.connectNow(S.clientId, { silent: true }); }); runSync('manual'); } catch (er) { toast(er.message, 6000, 'oops'); } }
   if (e.target.id === 'btnSyncNow') runSync('manual');
 });
 
@@ -1126,12 +1137,18 @@ async function boot() {
   S.settings = { ...S.settings, ...((await db.kv.get('settings')) || {}) }; applySettings();
   showSplash();
   S.open = new Set((await db.kv.get('openWorks')) || []);
-  await Drive.init(); await loadAll(); renderSide(); updateStatus();
+  await Drive.init(); S.clientId = await Drive.getClientId(); await loadAll(); renderSide(); updateStatus();
+  setTimeout(() => { if (navigator.onLine) Drive.prepare().catch(() => {}); }, 2500);
   const last = await db.kv.get('lastEp');
   if (last && findEp(last)) { S.cur = last; } // 홈의 「이어 쓰기」로 바로 열 수 있게
   await restoreTimer();
   showTab((location.hash.slice(1) || 'home'), { initial: true });
-  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.__YW_NO_SW) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.__YW_NO_SW) {
+    const hadCtl = !!navigator.serviceWorker.controller; let reloading = false;
+    // 새 버전이 설치되면 원고를 먼저 저장하고 한 번 새로고침 → 예전 화면이 남지 않게
+    navigator.serviceWorker.addEventListener('controllerchange', async () => { if (!hadCtl || reloading) return; reloading = true; try { await flushSave(); } catch (e) {} location.reload(); });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
+  }
   runSync('open');
   document.documentElement.classList.add('ready');
 }

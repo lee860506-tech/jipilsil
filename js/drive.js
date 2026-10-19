@@ -30,41 +30,61 @@ export async function init() {
 export const hasValidToken = () => !!(token && token.exp > Date.now() + 60_000);
 export async function wasConnected() { return !!(await db.kv.get('driveLinked')); }
 
-function loadGIS() {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
+let linkedCache = null;
+export function gisReady() { return !!window.google?.accounts?.oauth2; }
+export function loadGIS() {
+  if (gisReady()) return Promise.resolve();
   if (gisLoading) return gisLoading;
   gisLoading = new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
-    s.onload = () => res(); s.onerror = () => { gisLoading = null; rej(new Error('구글 로그인 스크립트를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.')); };
+    const to = setTimeout(() => { gisLoading = null; rej(new Error('구글 로그인 스크립트가 늦어요. 인터넷 연결을 확인하고 다시 눌러 주세요.')); }, 15000);
+    s.onload = () => { clearTimeout(to); res(); };
+    s.onerror = () => { clearTimeout(to); gisLoading = null; s.remove(); rej(new Error('구글 로그인 스크립트를 불러오지 못했어요. 인터넷 연결(또는 광고 차단 확장)을 확인해 주세요.')); };
     document.head.appendChild(s);
   });
   return gisLoading;
 }
+/** 미리 준비: 설정 화면을 열 때·앱 시작 때 호출해 두면 클릭 즉시 로그인 창이 열려요. */
+export async function prepare() { linkedCache = await wasConnected(); try { await loadGIS(); } catch (e) {} return gisReady(); }
 
-// 반드시 버튼 클릭 같은 사용자 동작 안에서 호출 (팝업 차단 방지)
-export async function connect({ silent = false } = {}) {
-  const clientId = await getClientId();
-  if (!clientId) throw new Error('설정에서 OAuth 클라이언트 ID를 먼저 입력해 주세요.');
-  await loadGIS();
-  const linked = await wasConnected();
+/**
+ * 반드시 클릭 핸들러 안에서 await 없이 바로 호출 (팝업 차단 방지).
+ * clientId 는 호출하는 쪽에서 동기로 넘겨요. 결과는 Promise.
+ */
+export function connectNow(clientId, { silent = false } = {}) {
+  if (!clientId) return Promise.reject(new Error('OAuth 클라이언트 ID가 비어 있어요. 설정에 붙여 넣어 주세요.'));
+  if (!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(clientId)) return Promise.reject(new Error('클라이언트 ID 모양이 아니에요. 「숫자-영문.apps.googleusercontent.com」 전체를 붙여 넣어 주세요.'));
+  if (!gisReady()) return Promise.reject(Object.assign(new Error('구글 로그인 준비 중이에요. 잠시 후 한 번 더 눌러 주세요.'), { notReady: true }));
   return new Promise((res, rej) => {
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
+    const tc = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: cfg().SCOPE || 'https://www.googleapis.com/auth/drive.file',
       callback: async r => {
-        if (r.error) return rej(new Error('구글 연결 실패: ' + r.error));
+        if (r.error === 'access_denied') return rej(new Error('구글이 접근을 막았어요 (access_denied). 구글 콘솔 → 대상 → 테스트 사용자에 내 Gmail을 추가해 주세요. 권한 화면에서 「취소」를 눌렀다면 다시 눌러 「계속」을 선택해 주세요.'));
+        if (r.error) return rej(new Error('구글 연결 실패: ' + (r.error_description || r.error)));
         if (window.google.accounts.oauth2.hasGrantedAllScopes && !window.google.accounts.oauth2.hasGrantedAllScopes(r, cfg().SCOPE)) {
           return rej(new Error('드라이브 권한에 체크해 주셔야 저장할 수 있어요.'));
         }
         token = { access_token: r.access_token, exp: Date.now() + (Number(r.expires_in) || 3600) * 1000 };
-        await db.kv.set('driveToken', token); await db.kv.set('driveLinked', true);
+        await db.kv.set('driveToken', token); await db.kv.set('driveLinked', true); linkedCache = true;
         res(token);
       },
-      error_callback: e => rej(new Error(e?.type === 'popup_closed' ? '로그인 창이 닫혔어요.' : '구글 로그인 창을 열 수 없어요 (팝업 차단 확인).')),
+      error_callback: e => {
+        const t = e?.type;
+        rej(new Error(t === 'popup_failed_to_open' ? '로그인 창이 차단됐어요. 주소창 오른쪽의 팝업 차단 아이콘에서 「항상 허용」 후 다시 눌러 주세요.'
+          : t === 'popup_closed' ? '로그인 창이 닫혔어요. 창에 「403 access_denied · 앱이 테스트 중」이 보였다면 구글 콘솔 → 대상 → 테스트 사용자에 내 Gmail을 추가해 주세요. 「401 invalid_client / deleted_client」였다면 클라이언트 ID를 다시 확인해 주세요.'
+          : '구글 로그인 창을 열 수 없어요' + (t ? ` (${t})` : '') + '.'));
+      },
     });
-    tokenClient.requestAccessToken({ prompt: silent || linked ? '' : 'consent' });
+    tokenClient = tc;
+    tc.requestAccessToken({ prompt: silent || linkedCache ? '' : 'consent' });
   });
+}
+// 예전 방식 호환 (자동 재연결 등, 사용자 동작 밖에서 쓰지 않음)
+export async function connect(opts = {}) {
+  const clientId = await getClientId(); await prepare();
+  return connectNow(clientId, opts);
 }
 export async function disconnect() {
   try { if (token && window.google?.accounts?.oauth2) window.google.accounts.oauth2.revoke(token.access_token, () => {}); } catch (e) {}

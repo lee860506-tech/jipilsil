@@ -432,3 +432,8 @@ ol.steps{padding-left:1.3em;line-height:1.9;margin:4px 0 10px}
   .photo-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
   .feat small{display:block}
 }
+.toast[popover]{inset:auto;left:50%;top:calc(14px + env(safe-area-inset-top));right:auto;bottom:auto;margin:0;overflow:visible}
+.set-msg{margin-top:10px;padding:10px 12px;border-radius:14px;background:var(--violet);color:var(--brand);font-size:.86rem;line-height:1.5;display:flex;gap:10px;align-items:center}
+.set-msg[hidden]{display:none}
+.set-msg.err{background:#FFF1F5;color:#B4235A;border:1px solid #FFD7E6}
+.set-msg img{width:64px;height:auto;flex:none}
