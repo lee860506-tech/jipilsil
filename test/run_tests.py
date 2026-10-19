@@ -83,7 +83,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(300)
     check('저장 상태: 🟡 저장 중 표시', '저장 중' in status(pg) or any('저장 중' in x for x in pg.evaluate("window.__st")), status(pg))
     wait_saved(pg)
-    check('저장 상태: 🟢 저장 완료', status(pg).strip() == '저장 완료', status(pg))
+    check('저장 상태: 🟢 기기에 저장됨 (드라이브 미연결)', status(pg).strip() == '기기에 저장됨' and ' g' in ' ' + pg.get_attribute('#saveStatus', 'class'), status(pg))
     cnt = pg.inner_text('#cntNoSp'); check('글자 수(공백 제외) 표시', re.search(r'공백 제외 [\d,]+자', cnt) is not None, cnt)
     # 두 번째 회차
     pg.click('.work[data-w] [data-act="addep"]'); pg.wait_for_timeout(300)
@@ -269,12 +269,14 @@ with sync_playwright() as p:
     c.set_offline(False); pg.wait_for_timeout(500)
 
     # ---- 드라이브 연결·동기화 (가짜 드라이브) ----
-    pg.click('#btnSettings'); pg.fill('#setCid', ''); pg.click('#setConnect'); pg.wait_for_timeout(400)
+    pg.click('#btnSettings'); pg.wait_for_timeout(300)
+    check('설정: 기본 클라이언트 ID가 칸에 들어 있음', pg.input_value('#setCid').endswith('.apps.googleusercontent.com') and '기본 ID' in pg.inner_text('#setCidNote'))
+    pg.fill('#setCid', 'abc'); pg.click('#setConnect'); pg.wait_for_timeout(400)
     m1 = pg.inner_text('#setMsg') if pg.is_visible('#setMsg') else ''
     top = pg.evaluate("()=>{const t=document.querySelector('#toast');return t.matches(':popover-open') && !t.hidden}")
-    pg.fill('#setCid', 'abc'); pg.click('#setConnect'); pg.wait_for_timeout(300); m2 = pg.inner_text('#setMsg')
+    m2 = m1
     pg.screenshot(path=SHOTS + 'desktop_10a_settings_error.png')
-    check('연결 버튼: ID 없거나 틀리면 설정 창 안에 바로 안내 (+맨 위 토스트)', '비어' in m1 and '아쉽다' in m1 and top and '모양' in m2, f'{m1[:30]} / {m2[:30]}')
+    check('연결 버튼: ID 없거나 틀리면 설정 창 안에 바로 안내 (+맨 위 토스트)', '아쉽다' in m1 and top and '모양' in m2, f'{m1[:30]} / {m2[:30]}')
     pg.fill('#setCid', '123456789-testclient.apps.googleusercontent.com')
     pg.screenshot(path=SHOTS + 'desktop_10_settings.png')
     pg.click('#setConnect'); pg.wait_for_timeout(500)

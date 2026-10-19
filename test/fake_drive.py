@@ -7,9 +7,9 @@ class FakeDrive:
         return (datetime.datetime(2026,10,19,5,0,0)+datetime.timedelta(seconds=next(self.t))).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     def new_id(self): return 'f%03d' % next(self.n)
     def meta(self, f):
-        return {k: f[k] for k in ('id','name','mimeType','modifiedTime','appProperties','parents','description','trashed') if k in f}
+        return {k: f[k] for k in ('id','name','mimeType','modifiedTime','appProperties','parents','description','trashed','version') if k in f}
     def remote_edit(self, fid, text):
-        self.files[fid]['content'] = text; self.files[fid]['modifiedTime'] = self.now()
+        self.files[fid]['content'] = text; self.files[fid]['modifiedTime'] = self.now(); self.files[fid]['version'] = str(int(self.files[fid].get('version', '1')) + 1)
     def by(self, kind): return [f for f in self.files.values() if f.get('appProperties',{}).get('ywKind')==kind and not f.get('trashed')]
     def handle(self, route):
         req = route.request; u = urllib.parse.urlparse(req.url); qs = urllib.parse.parse_qs(u.query); path = u.path; m = req.method
@@ -37,7 +37,7 @@ class FakeDrive:
             if not f: return ok({'error':'nf'},404)
             if m == 'GET': return ok(self.meta(f))
             if m == 'PATCH':
-                body = json.loads(req.post_data or '{}'); f.update({k:v for k,v in body.items()}); f['modifiedTime']=self.now(); return ok({'id':f['id']})
+                body = json.loads(req.post_data or '{}'); f.update({k:v for k,v in body.items()}); f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1); return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
         if path.startswith('/upload/drive/v3/files'):
             ctype = req.headers.get('content-type',''); b = re.search(r'boundary=(\S+)', ctype).group(1)
             raw = req.post_data_buffer
@@ -50,12 +50,12 @@ class FakeDrive:
             mm = re.match(r'^/upload/drive/v3/files/([^/]+)$', path)
             if m == 'POST':
                 fid = self.new_id()
-                f = {'id':fid,'name':meta.get('name'),'mimeType':meta.get('mimeType') or hdr.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode(),'parents':meta.get('parents') or [],'appProperties':meta.get('appProperties') or {},'description':meta.get('description'),'modifiedTime':self.now(),'trashed':False,'content':content,'bytes':len(media)}
+                f = {'id':fid,'name':meta.get('name'),'mimeType':meta.get('mimeType') or hdr.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode(),'parents':meta.get('parents') or [],'appProperties':meta.get('appProperties') or {},'description':meta.get('description'),'modifiedTime':self.now(),'trashed':False,'content':content,'bytes':len(media),'version':'1'}
                 self.files[fid]=f; return ok({'id':fid,'modifiedTime':f['modifiedTime']})
             if m == 'PATCH' and mm:
                 f = self.files.get(mm.group(1))
                 if not f: return ok({'error':'nf'},404)
-                f.update({k:v for k,v in meta.items()}); f['content']=content; f['modifiedTime']=self.now(); return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
+                f.update({k:v for k,v in meta.items()}); f['content']=content; f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1); return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
         return ok({'error':'unhandled '+m+' '+path},400)
 
 GIS_STUB = """
