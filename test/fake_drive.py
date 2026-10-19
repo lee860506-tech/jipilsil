@@ -3,6 +3,8 @@ import json, re, itertools, urllib.parse, datetime
 class FakeDrive:
     def __init__(self):
         self.files = {}; self.n = itertools.count(1); self.t = itertools.count(1); self.log = []
+        self.docs = None  # None | 'plus1' | 'double' : 실제 구글 문서처럼 내보낼 때 줄바꿈 수가 바뀌는 흉내
+        self.bump = set()  # 업로드 뒤 변환으로 modifiedTime 이 한 번 더 바뀌는 흉내
     def now(self):
         return (datetime.datetime(2026,10,19,5,0,0)+datetime.timedelta(seconds=next(self.t))).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     def new_id(self): return 'f%03d' % next(self.n)
@@ -21,10 +23,14 @@ class FakeDrive:
             f = self.files.get(mm.group(1))
             if not f: return ok({'error':'nf'},404)
             # 구글 문서 텍스트 내보내기처럼: BOM + CRLF
-            return route.fulfill(status=200, content_type='text/plain; charset=utf-8', body=('\ufeff'+f['content'].replace('\n','\r\n')).encode('utf-8'))
+            c = f['content'] or ''
+            if self.docs and f.get('mimeType') == 'application/vnd.google-apps.document':
+                c = re.sub(r'\n+', lambda r: '\n' * (len(r.group(0)) + 1 if self.docs == 'plus1' else len(r.group(0)) * 2), c) + '\n'
+            return route.fulfill(status=200, content_type='text/plain; charset=utf-8', body=('\ufeff'+c.replace('\n','\r\n')).encode('utf-8'))
         if path == '/drive/v3/files' and m == 'GET':
             q = qs.get('q',[''])[0]
             kind = re.search(r"key='ywKind' and value='([^']+)'", q)
+            for fid in list(self.bump): self.files[fid]['modifiedTime'] = self.now(); self.bump.discard(fid)
             res = [self.meta(f) for f in self.files.values() if (not kind or f.get('appProperties',{}).get('ywKind')==kind.group(1)) and not (('trashed=false' in q) and f.get('trashed'))]
             return ok({'files': res})
         if path == '/drive/v3/files' and m == 'POST':
@@ -51,11 +57,15 @@ class FakeDrive:
             if m == 'POST':
                 fid = self.new_id()
                 f = {'id':fid,'name':meta.get('name'),'mimeType':meta.get('mimeType') or hdr.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode(),'parents':meta.get('parents') or [],'appProperties':meta.get('appProperties') or {},'description':meta.get('description'),'modifiedTime':self.now(),'trashed':False,'content':content,'bytes':len(media),'version':'1'}
-                self.files[fid]=f; return ok({'id':fid,'modifiedTime':f['modifiedTime']})
+                self.files[fid]=f
+                if self.docs: self.bump.add(fid)
+                return ok({'id':fid,'modifiedTime':f['modifiedTime']})
             if m == 'PATCH' and mm:
                 f = self.files.get(mm.group(1))
                 if not f: return ok({'error':'nf'},404)
-                f.update({k:v for k,v in meta.items()}); f['content']=content; f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1); return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
+                f.update({k:v for k,v in meta.items()}); f['content']=content; f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1)
+                if self.docs: self.bump.add(f['id'])
+                return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
         return ok({'error':'unhandled '+m+' '+path},400)
 
 GIS_STUB = """
