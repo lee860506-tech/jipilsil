@@ -241,7 +241,7 @@ async function syncOnce() {
         return cur;
       });
       if (raced) { if (busy) busy.again = true; continue; }
-      hooks.onChange({ episode: ep.id, work: ep.workId, pulled: true, textChanged: changed });
+      hooks.onChange({ episode: ep.id, work: ep.workId, pulled: true, textChanged: changed, prevText: ep.text });
     } else if (canon(remoteText) === canon(ep.text)) {
       await db.update('episodes', ep.id, cur => cur && (cur.drive = { ...(cur.drive || {}), fileId: f.id, modifiedTime: f.modifiedTime }, cur.remoteMissing = false, cur)); // 내용 같음 → 메타만 올리면 됨
     } else {

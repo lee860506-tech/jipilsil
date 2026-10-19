@@ -82,13 +82,15 @@
           <div class="crumb" id="crumbWork"></div>
           <input id="epTitle" class="ep-title" placeholder="회차 제목 (선택)" maxlength="80" aria-label="회차 제목">
         </div>
-        <div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div>
+        <div class="status-wrap"><div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div><button type="button" class="btn small st-act" id="btnStatusAct" hidden></button></div>
       </header>
       <div class="toolbar" role="toolbar" aria-label="집필 도구">
         <button class="tb" id="btnMic" title="말해서 글쓰기"><span>🎙</span><b>받아쓰기</b></button>
         <button class="tb" id="btnListen" title="내 소설 듣기"><span>🔊</span><b>듣기</b></button>
         <button class="tb" id="btnRecord" title="아이디어 녹음"><span>⏺</span><b>녹음</b></button>
         <button class="tb" id="btnSnap" title="지금 버전 저장"><span>✦</span><b>버전 저장</b></button>
+        <button class="tb" id="btnCopy" title="ChatGPT로 가져갈 원고 복사"><span>📋</span><b>복사</b></button>
+        <button class="tb" id="btnRevise" title="ChatGPT 수정본 안전하게 반영"><span>✎</span><b>수정본 반영</b></button>
         <button class="tb" id="btnMark" title="이 문단 북마크"><span>🔖</span><b>북마크</b></button>
         <button class="tb" id="btnTimerTb" title="집필 타이머"><span>⏱</span><b id="tbTimer">타이머</b></button>
         <button class="tb" id="btnPanel" title="메모·음성·버전"><span>☰</span><b>메모·기록</b></button>
@@ -161,6 +163,7 @@
 </div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 <div id="toast" class="toast" role="alert" popover="manual" hidden></div>
+<div id="kbPill" class="kb-pill" aria-hidden="true" hidden><i></i><span></span></div>
 <dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
 <input type="file" id="fileImport" accept=".txt,text/plain" multiple hidden>
 <input type="file" id="photoCam" accept="image/*" capture="environment" hidden>

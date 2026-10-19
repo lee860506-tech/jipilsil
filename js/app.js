@@ -17,14 +17,15 @@ const S = {
 };
 window.__yw = S; // 테스트·디버그용
 
-const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', open: '열었을 때' };
+const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', open: '열었을 때' };
 
 // ================= 공통 UI =================
 let toastT;
 const STK = { fighting: 'img/fighting.webp', great: 'img/great.webp', oops: 'img/oops.webp', focus: 'img/focus.webp' };
-function toast(msg, ms = 2800, stk) {
+function toast(msg, ms = 2800, stk, action) {
   const t = $('#toast');
-  try { if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } else { const d = $('#dlg'); (d.open ? d : document.body).appendChild(t); } } catch (e) {} t.innerHTML = (stk ? `<img class="t-stk" src="${STK[stk]}" alt="">` : '') + `<span>${esc(msg)}</span>`; t.hidden = false; t.classList.add('on');
+  try { if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } else { const d = $('#dlg'); (d.open ? d : document.body).appendChild(t); } } catch (e) {} t.innerHTML = (stk ? `<img class="t-stk" src="${STK[stk]}" alt="">` : '') + `<span>${esc(msg)}</span>` + (action ? `<button type="button" class="btn small brand t-act">${esc(action.label)}</button>` : ''); t.hidden = false; t.classList.add('on');
+  if (action) t.querySelector('.t-act').onclick = () => { clearTimeout(toastT); t.classList.remove('on'); t.hidden = true; action.fn(); };
   clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.hidden = true, 250); }, ms);
 }
 function dialog({ title, html = '', buttons = [{ label: '확인', value: 'ok', cls: 'gold' }], wide = false, onOpen }) {
@@ -144,8 +145,9 @@ async function runSync(why) {
   try { await Drive.sync(why); }
   catch (e) {
     if (e instanceof Drive.NeedAuth) S.syncState = 'needauth';
-    else { S.syncState = 'error'; console.warn('sync', e, e.body); if (why === 'manual') toast('동기화 오류: ' + e.message + ' — 원고는 기기에 안전하게 저장돼 있어요.', 4500, 'oops'); }
+    else { S.syncState = 'error'; console.warn('sync', e, e.body); if (why === 'manual') toast('동기화 오류: ' + e.message + ' — 원고는 기기에 안전하게 저장돼 있어요.', 4500, 'oops'); S.retryN = (S.retryN || 0) + 1; scheduleSync(Math.min(300000, 15000 * 2 ** (S.retryN - 1))); }
   }
+  if (S.syncState !== 'error') S.retryN = 0;
   await loadAll(); renderSide(); updateStatus(); refreshConflictBanner(); rerenderTab();
 }
 
@@ -155,15 +157,25 @@ async function pendingCount() {
 }
 async function updateStatus() {
   const el = $('#saveStatus'); if (!el) return;
-  let cls, txt;
-  if (S.pending || S.saving) { cls = 'y'; txt = '저장 중'; }
-  else if (!navigator.onLine) { cls = 'r'; txt = '인터넷 없음 — 기기에 임시 저장'; }
-  else if (S.syncState === 'syncing') { cls = 'y'; txt = '저장 중 · 드라이브'; }
-  else { cls = 'g'; txt = '저장 완료'; }
-  el.className = 'save-status ' + cls; el.querySelector('span').textContent = txt;
-  // 하단 드라이브 상태
+  // 위쪽 상태: 「기기에 저장됨」과 「드라이브에 저장됨」을 나눠서 보여 줌
   const linked = await Drive.wasConnected();
   const n = await pendingCount();
+  const cur = S.cur ? findEp(S.cur) : null; const lastSync = await db.kv.get('lastSync');
+  const hm = t => { const d = new Date(t); return `${d.getHours()}:${pad2(d.getMinutes())}`; };
+  let cls, txt, act = null;
+  if (S.pending || S.saving) { cls = 'y'; txt = '저장 중…'; }
+  else if (!navigator.onLine) { cls = 'r'; txt = '인터넷 없음 — 기기에 임시 저장'; }
+  else if (!linked) { cls = 'g'; txt = '기기에 저장됨'; }
+  else if (S.syncState === 'needauth' || !Drive.hasValidToken()) { cls = 'o'; txt = '기기에 저장됨 · 드라이브 연결 만료'; act = ['reauth', '다시 연결']; }
+  else if (S.syncState === 'syncing') { cls = 'y'; txt = '기기에 저장됨 · 드라이브 올리는 중'; }
+  else if (S.syncState === 'error') { cls = 'r'; txt = '기기에 저장됨 · 드라이브 저장 실패'; act = ['retry', '다시 시도']; }
+  else if (cur?.conflict) { cls = 'o'; txt = '드라이브와 내용이 달라요'; act = ['resolve', '비교하기']; }
+  else if (cur ? cur.dirty : n) { cls = 'y'; txt = '기기에 저장됨 · 드라이브 대기'; }
+  else { cls = 'g'; txt = lastSync ? `드라이브 ${hm(lastSync)} 저장` : '드라이브 저장됨'; }
+  el.className = 'save-status ' + cls; el.querySelector('span').textContent = txt;
+  el.title = linked ? (lastSync ? `마지막 드라이브 동기화: ${fmtTime(lastSync)}` : '아직 드라이브 동기화 전') : '구글 드라이브 미연결 · 이 기기에만 저장 중';
+  const ab = $('#btnStatusAct'); if (ab) { ab.hidden = !act; if (act) { ab.dataset.act = act[0]; ab.textContent = act[1]; } }
+  const kp = $('#kbPill'); if (kp) { kp.className = 'kb-pill ' + cls; kp.querySelector('span').textContent = txt; }
   let line;
   if (!linked) line = '☁ 드라이브 미연결 · 기기에만 저장 중';
   else if (!navigator.onLine) line = `🔴 오프라인 · 연결되면 ${n}건 자동 업로드`;
@@ -181,11 +193,36 @@ Drive.setHooks({
   onChange: async ch => {
     if (ch.episode && ch.episode === S.cur && ch.textChanged) {
       const ep = await db.get('episodes', S.cur);
+      if (ep && (S.pending || canon(ed.value) !== canon(ch.prevText ?? ep.text) && canon(ed.value) !== canon(ep.text))) {
+        // 받는 사이 이 기기에서도 썼어요 → 덮지 않고 둘 다 보관 + 선택 창
+        S.pending = false; clearTimeout(saveT);
+        const local = ed.value, title = $('#epTitle').value.trim();
+        await snapshot({ ...ep, text: local }, 'conflict-local', '충돌: 이 기기 버전');
+        await snapshot(ep, 'conflict-remote', '충돌: 드라이브 버전');
+        await db.update('episodes', ep.id, c => c && (c.conflict = { remoteText: c.text, remoteModifiedTime: c.drive?.modifiedTime, fileId: c.drive?.fileId, at: Date.now() }, c.text = local, c.title = title || c.title, c.rev = (c.rev || 0) + 1, c.dirty = true, c.updatedAt = Date.now(), c));
+        await loadAll(); refreshConflictBanner(); updateStatus();
+        toast('다른 기기에서 바뀐 내용과 지금 쓰던 내용이 겹쳐요. 둘 다 보관했으니 골라 주세요.', 5000, 'oops');
+        return;
+      }
       if (ep && !S.pending) { const ed = $('#editor'); const pos = ed.selectionStart; ed.value = ep.text; $('#epTitle').value = ep.title || ''; $('#epMemo').value = ep.memo || ''; ed.setSelectionRange(pos, pos); updateCounts(); toast('드라이브에서 바뀐 내용을 불러왔어요 (이전 내용은 수정 기록에 있어요)'); }
     }
   },
   onConflict: ep => { toast(`⚠ ${ep.title || '회차'}: 기기와 드라이브 양쪽에서 바뀌었어요. 비교해서 골라 주세요.`, 5000); refreshConflictBanner(); },
 });
+
+$('#btnStatusAct').addEventListener('click', e => {
+  const a = e.currentTarget.dataset.act;
+  if (a === 'reauth') reconnect();
+  else if (a === 'retry') { S.syncState = 'syncing'; updateStatus(); runSync('manual'); }
+  else if (a === 'resolve' && S.cur) resolveUI(S.cur);
+});
+// 클릭 안에서 바로 로그인 창 열기 (팝업 차단 방지)
+function reconnect() {
+  Drive.connectNow(S.clientId, { silent: true })
+    .catch(async er => { if (!er.notReady) throw er; await Drive.loadGIS(); return Drive.connectNow(S.clientId, { silent: true }); })
+    .then(() => { toast('드라이브에 다시 연결했어요', 2500, 'great'); runSync('manual'); })
+    .catch(er => toast(er.message, 6000, 'oops'));
+}
 
 // ================= 서재(사이드바) =================
 async function saveOpen() { await db.kv.set('openWorks', [...S.open]); }
@@ -282,8 +319,8 @@ $('#btnNewWork').onclick = async () => {
 const ed = $('#editor');
 function updateCrumb() { const ep = findEp(S.cur); if (!ep) return; $('#crumbWork').innerHTML = `${esc(workOf(ep)?.title || '')} <b>· ${esc(labelOf(ep))}</b>`; }
 async function openEpisode(id) {
-  if (S.cur && S.cur !== id) await flushSave();
-  stopAllAudio();
+  if (S.cur && S.cur !== id) { savePos(); await flushSave(); }
+  stopAllAudio(); await loadPos();
   const ep = await db.get('episodes', id); if (!ep) return;
   const cached = findEp(id); if (cached) Object.assign(cached, ep);
   if (S.tab !== 'note') showTab('note', { keep: true });
@@ -295,11 +332,12 @@ async function openEpisode(id) {
   if (!S.open.has(ep.workId)) { S.open.add(ep.workId); saveOpen(); renderSide(); }
   if (!$('#panel').hidden) renderPanel();
   snapshot(ep, 'open'); // 열 때 기준점 (같은 내용이면 건너뜀)
-  updateStatus();
+  db.kv.set('lastView', 'editor');
+  updateStatus(); await restorePos(id);
   if (matchMedia('(min-width: 900px)').matches) ed.focus({ preventScroll: true });
 }
-function closeEditor() { S.cur = null; $('#editorView').hidden = true; $('#empty').hidden = false; document.body.classList.remove('editing'); db.kv.set('lastEp', null); }
-$('#btnBack').onclick = async () => { await flushSave(); stopAllAudio(); document.body.classList.remove('editing'); renderSide(); };
+function closeEditor() { savePos(); db.kv.set('lastView', 'list'); S.cur = null; $('#editorView').hidden = true; $('#empty').hidden = false; document.body.classList.remove('editing'); db.kv.set('lastEp', null); }
+$('#btnBack').onclick = async () => { savePos(); db.kv.set('lastView', 'list'); await flushSave(); stopAllAudio(); document.body.classList.remove('editing'); renderSide(); };
 
 function updateCounts() {
   const c = counts(ed.value);
@@ -311,8 +349,13 @@ ed.addEventListener('input', () => { markPending(); clearTimeout(cntT); cntT = s
 $('#epTitle').addEventListener('input', markPending);
 $('#epMemo').addEventListener('input', markPending);
 ed.addEventListener('blur', flushSave); $('#epTitle').addEventListener('blur', () => { flushSave().then(() => { renderSide(); }); }); $('#epMemo').addEventListener('blur', flushSave);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); else runSync('focus'); });
-window.addEventListener('pagehide', flushSave);
+// 기기 바꿔 쓰기: 다시 보거나·창으로 돌아오거나·인터넷이 돌아오면 드라이브 확인 (너무 잦지 않게)
+let lastFresh = 0;
+function freshCheck(why) { if (Date.now() - lastFresh < 8000) return; lastFresh = Date.now(); runSync(why); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { flushSave(); savePos(); } else freshCheck('focus'); });
+window.addEventListener('focus', () => freshCheck('focus'));
+setInterval(() => { if (document.visibilityState === 'visible' && navigator.onLine && Drive.hasValidToken() && Date.now() - (S.lastInput || 0) > 20000) freshCheck('poll'); }, 90000);
+window.addEventListener('pagehide', () => { savePos(); flushSave(); });
 window.addEventListener('beforeunload', e => { if (S.pending) { flushSave(); e.preventDefault(); e.returnValue = ''; } });
 
 // 큰 붙여넣기: 줄바꿈 정리 + 많은 양을 덮어쓰면 그 전에 기록 남기기
@@ -388,6 +431,169 @@ async function manualSnap() {
 }
 $('#btnSnap').onclick = manualSnap;
 
+// ================= ChatGPT로 가져가기 (클립보드 복사) =================
+function copyText(text) {
+  // 1) 표준 API (https·사용자 클릭 안) → 2) 안 되면 숨은 textarea 선택 + execCommand (옛 모바일 브라우저)
+  const fallback = () => {
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
+    (document.querySelector('dialog[open]') || document.body).appendChild(ta);
+    ta.focus({ preventScroll: true }); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove(); return ok;
+  };
+  if (navigator.clipboard?.writeText && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => fallback());
+  return Promise.resolve(fallback());
+}
+function epHeader(ep) { const w = workOf(ep); return `[작품] ${w?.title || ''} / [회차] ${labelOf(ep)}${ep.title ? ' ' + ep.title : ''}`; }
+/** 이어쓰기용: 마지막 n자(문단 경계에서 자름) 또는 마지막 n문단 */
+function tailFor(text, mode, n) {
+  const t = text.replace(/\s+$/, '');
+  if (mode === 'para') { const ps = t.split(/\n\s*\n|\n/).filter(x => x.trim()); return ps.slice(-n).join('\n\n'); }
+  if ([...t].length <= n) return t;
+  let cut = t.slice(-n); const nl = cut.indexOf('\n');
+  if (nl > 0 && nl < cut.length * 0.4) cut = cut.slice(nl + 1); // 문단 중간에서 시작하지 않게
+  return cut.replace(/^\s+/, '');
+}
+function handoffText(kind, ep, text, sel, opt) {
+  if (kind === 'all') return text;
+  if (kind === 'sel') return sel;
+  const tail = tailFor(text, opt.mode, opt.n);
+  const size = opt.mode === 'para' ? `마지막 ${opt.n}문단` : `마지막 약 ${[...tail].length.toLocaleString()}자`;
+  return `${epHeader(ep)}\n아래는 원고 ${size}입니다. 이 흐름과 문체를 이어서 다음 장면을 써 주세요.\n---\n${tail}`;
+}
+$('#btnCopy').onclick = async () => {
+  await flushSave(); const ep = findEp(S.cur); if (!ep) return;
+  const text = ed.value; const s0 = ed.selectionStart, e0 = ed.selectionEnd; const sel = text.slice(s0, e0);
+  const st = S.settings; st.hoMode ||= 'chars'; st.hoN ||= 1500;
+  const optsHTML = () => (st.hoMode === 'para' ? [3, 5, 10, 20] : [500, 1000, 1500, 2000, 3000]).map(x => `<option value="${x}" ${x === st.hoN ? 'selected' : ''}>${x.toLocaleString()}${st.hoMode === 'para' ? '문단' : '자'}</option>`).join('');
+  await dialog({ title: 'ChatGPT로 가져가기', wide: true, html: `
+    <p class="mute small">누르면 바로 복사돼요. ChatGPT 입력창에 길게 눌러 「붙여넣기」 하세요. (파일은 만들지 않아요)</p>
+    <div class="ho-list">
+      <button type="button" class="ho" data-k="all"><b>📄 회차 전체 복사</b><small>${counts(text).all.toLocaleString()}자</small></button>
+      <button type="button" class="ho" data-k="sel" ${sel ? '' : 'disabled'}><b>✂ 선택한 부분 복사</b><small>${sel ? `${[...sel].length.toLocaleString()}자 선택됨` : '먼저 원고에서 복사할 부분을 드래그해 선택하세요'}</small></button>
+      <button type="button" class="ho" data-k="tail"><b>➜ 이어쓰기용 복사</b><small>작품명·회차명 + 원고 마지막 부분</small></button>
+    </div>
+    <div class="row wrap ho-opt"><label class="fld">이어쓰기 분량 <select id="hoMode"><option value="chars" ${st.hoMode === 'chars' ? 'selected' : ''}>글자 수로</option><option value="para" ${st.hoMode === 'para' ? 'selected' : ''}>문단 수로</option></select></label>
+      <label class="fld">마지막 <select id="hoN">${optsHTML()}</select></label></div>
+    <pre class="ho-prev" id="hoPrev"></pre>`,
+    buttons: [{ label: '닫기', value: 'cancel' }],
+    onOpen: f => {
+      const prev = () => { f.querySelector('#hoPrev').textContent = handoffText('tail', ep, text, sel, { mode: st.hoMode, n: st.hoN }).slice(0, 400) + '…'; };
+      prev();
+      f.querySelector('#hoMode').onchange = e => { st.hoMode = e.target.value; st.hoN = st.hoMode === 'para' ? 5 : 1500; f.querySelector('#hoN').innerHTML = optsHTML(); saveSettings(); prev(); };
+      f.querySelector('#hoN').onchange = e => { st.hoN = +e.target.value; saveSettings(); prev(); };
+      f.querySelectorAll('.ho').forEach(b => b.onclick = () => {
+        const k = b.dataset.k; const out = handoffText(k, ep, text, sel, { mode: st.hoMode, n: st.hoN });
+        window.__lastCopy = out; // 테스트 확인용
+        copyText(out).then(ok => {
+          if (ok) { $('#dlg').close('cancel'); toast(`📋 ${k === 'all' ? '회차 전체' : k === 'sel' ? '선택한 부분' : '이어쓰기용 원고'}를 복사했어요 (${[...out].length.toLocaleString()}자). ChatGPT에 붙여 넣으세요!`, 3200, 'great'); }
+          else toast('복사가 막혔어요. 원고를 길게 눌러 직접 복사해 주세요.', 4500, 'oops');
+          ed.setSelectionRange(s0, e0);
+        });
+      });
+    } });
+};
+
+// ================= 수정본 반영 (ChatGPT에서 고친 글을 안전하게) =================
+$('#btnRevise').onclick = async () => {
+  await flushSave(); const ep = findEp(S.cur); if (!ep) return;
+  const s0 = ed.selectionStart, e0 = ed.selectionEnd; const sel = ed.value.slice(s0, e0);
+  const st = S.settings; if (st.reviseKeep == null) st.reviseKeep = true;
+  const r = await dialog({ title: '수정본 반영', wide: true, html: `
+    <p class="mute small">ChatGPT에서 고친 글을 아래에 붙여 넣고 반영 방법을 골라요. 반영하기 전 원고는 <b>수정 기록</b>에 자동으로 남고, 바로 <b>되돌리기</b>도 돼요.</p>
+    <textarea id="rvText" class="rv-text" rows="8" placeholder="여기에 수정본을 붙여 넣으세요"></textarea>
+    <div class="rv-modes">
+      <label class="rv-m"><input type="radio" name="rvMode" value="append" ${sel ? '' : 'checked'}> <b>뒤에 이어 붙이기</b><small>원고 맨 끝에 새 문단으로 붙여요</small></label>
+      <label class="rv-m ${sel ? '' : 'off'}"><input type="radio" name="rvMode" value="replace" ${sel ? 'checked' : 'disabled'}> <b>선택 영역 교체</b><small>${sel ? `선택한 ${[...sel].length.toLocaleString()}자를 바꿔요` : '원고에서 바꿀 부분을 먼저 선택한 뒤 다시 열어 주세요'}</small></label>
+    </div>
+    ${sel ? `<details class="rv-sel" open><summary>바뀔 부분 (지금 원고)</summary><pre>${esc(sel.length > 1200 ? sel.slice(0, 600) + '\n…\n' + sel.slice(-500) : sel)}</pre></details>` : ''}
+    <label class="chk"><input type="checkbox" id="rvKeep" ${st.reviseKeep ? 'checked' : ''}> 붙여 넣은 그대로 (빈 줄·문단 정확히 유지)</label>
+    <p class="mute small" id="rvInfo"></p>`,
+    buttons: [{ label: '취소', value: 'cancel' }, { label: '반영하기', value: 'ok', cls: 'gold' }],
+    onOpen: f => { const t = f.querySelector('#rvText'); setTimeout(() => t.focus(), 50); t.addEventListener('input', () => { f.querySelector('#rvInfo').textContent = t.value ? `${[...t.value].length.toLocaleString()}자` : ''; }); } });
+  if (r !== 'ok') { ed.setSelectionRange(s0, e0); return; }
+  const f = $('#dlgForm'); const raw = f.querySelector('#rvText').value; const keep = f.querySelector('#rvKeep').checked;
+  const mode = f.querySelector('input[name=rvMode]:checked')?.value || 'append';
+  st.reviseKeep = keep; saveSettings();
+  if (!raw.trim()) return toast('붙여 넣은 내용이 없어요', 2500, 'oops');
+  const ins = keep ? raw.replace(/\r\n?/g, '\n') : tidyPaste(raw);
+  const before = ed.value;
+  await snapshot({ ...ep, text: before }, 'before-revise', mode === 'replace' ? '수정본 교체 전' : '수정본 이어 붙이기 전');
+  let next, caret;
+  if (mode === 'replace' && e0 > s0) { next = before.slice(0, s0) + ins + before.slice(e0); caret = s0 + ins.length; }
+  else { const sep = !before ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'; next = before + sep + ins; caret = next.length; }
+  S.pasteChars += [...ins].length;
+  ed.value = next; ed.setSelectionRange(caret, caret); markPending(); updateCounts(); await flushSave();
+  if (mode === 'replace') ed.setSelectionRange(s0, caret);
+  keepCaretVisible(true);
+  toast(mode === 'replace' ? '선택 영역을 수정본으로 바꿨어요' : '수정본을 뒤에 이어 붙였어요', 7000, 'great', { label: '되돌리기', fn: async () => {
+    if (S.cur !== ep.id) await openEpisode(ep.id);
+    await snapshot({ ...findEp(ep.id), text: ed.value }, 'before-restore', '수정본 되돌리기 전');
+    ed.value = before; ed.setSelectionRange(s0, e0); markPending(); updateCounts(); await flushSave(); toast('반영 전으로 되돌렸어요 (수정 기록에도 남아 있어요)');
+  } });
+};
+
+// ================= 휴대폰 키보드 · 위치 기억 =================
+// 커서가 있는 줄의 위치(textarea 안의 y)를 거울 div로 계산
+const mirror = document.createElement('div'); mirror.setAttribute('aria-hidden', 'true');
+mirror.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word';
+document.body.appendChild(mirror);
+function caretY() {
+  const cs = getComputedStyle(ed);
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'boxSizing', 'wordBreak', 'tabSize']) mirror.style[k] = cs[k];
+  mirror.style.width = ed.clientWidth + 'px';
+  mirror.textContent = ed.value.slice(0, ed.selectionEnd); const mk = document.createElement('span'); mk.textContent = '\u200b'; mirror.appendChild(mk);
+  return mk.offsetTop + mk.offsetHeight;
+}
+function visibleEditorBottom() {
+  // 키보드에 가려지지 않는 편집창 아래쪽 (편집창 안 좌표)
+  const r = ed.getBoundingClientRect(); const vv = window.visualViewport;
+  const vb = vv ? vv.offsetTop + vv.height : innerHeight;
+  return Math.min(r.height, vb - r.top);
+}
+function keepCaretVisible(force) {
+  if (!S.cur || $('#editorView').hidden || (!force && document.activeElement !== ed)) return;
+  const y = caretY(); const lh = parseFloat(getComputedStyle(ed).lineHeight) || 30;
+  const top = ed.scrollTop, bottom = top + visibleEditorBottom() - lh * 1.5;
+  if (y > bottom) ed.scrollTop = y - visibleEditorBottom() + lh * 2.5;
+  else if (y - lh < top) ed.scrollTop = Math.max(0, y - lh * 3);
+}
+window.__jpsCaret = { caretY, keepCaretVisible, visibleEditorBottom };
+const vvMax = {};
+function onViewport() {
+  const vv = window.visualViewport; if (!vv) return;
+  const o = innerWidth > innerHeight ? 'l' : 'p'; vvMax[o] = Math.max(vvMax[o] || 0, vv.height, o === S.vvO ? 0 : innerHeight); S.vvO = o;
+  const kb = Math.max(innerHeight, vvMax[o]) - vv.height > 140; // 키보드가 열림 (안드로이드는 화면 자체가 줄어서 최대 높이와 비교)
+  document.body.classList.toggle('kb-open', kb);
+  document.documentElement.style.setProperty('--vvh', vv.height + 'px');
+  document.documentElement.style.setProperty('--vvtop', vv.offsetTop + 'px');
+  // 위쪽 저장 상태가 화면 밖(또는 집중 모드로 흐림)이면 떠 있는 작은 상태 표시를 보여 줘요
+  const r = $('#saveStatus').getBoundingClientRect(); const hiddenTop = r.bottom < vv.offsetTop + 4 || r.top > vv.offsetTop + vv.height || r.height === 0 || document.body.classList.contains('focus');
+  const pill = $('#kbPill'); pill.hidden = !(kb && !$('#editorView').hidden && hiddenTop);
+  if (kb) requestAnimationFrame(() => keepCaretVisible());
+}
+window.visualViewport?.addEventListener('resize', onViewport);
+window.visualViewport?.addEventListener('scroll', onViewport);
+ed.addEventListener('input', () => { if (document.body.classList.contains('kb-open')) requestAnimationFrame(() => keepCaretVisible()); });
+
+// 회차마다 커서·스크롤 위치 기억 → 다시 열면 그 자리로
+let posMap = null, posT;
+async function loadPos() { if (!posMap) posMap = (await db.kv.get('epPos')) || {}; return posMap; }
+function savePos() {
+  if (!S.cur || $('#editorView').hidden || !posMap) return;
+  posMap[S.cur] = { sel: ed.selectionStart, end: ed.selectionEnd, top: Math.round(ed.scrollTop), at: Date.now() };
+  db.kv.set('epPos', posMap);
+}
+const queuePos = () => { clearTimeout(posT); posT = setTimeout(savePos, 600); };
+ed.addEventListener('scroll', queuePos, { passive: true });
+ed.addEventListener('keyup', queuePos); ed.addEventListener('pointerup', queuePos); ed.addEventListener('input', queuePos);
+async function restorePos(id) {
+  const p = (await loadPos())[id]; if (!p) return;
+  const L = ed.value.length; ed.setSelectionRange(Math.min(p.sel, L), Math.min(p.end ?? p.sel, L));
+  requestAnimationFrame(() => { ed.scrollTop = p.top || 0; });
+}
+
 // ================= 충돌 =================
 async function refreshConflictBanner() {
   document.querySelector('.conflict-banner')?.remove();
@@ -400,7 +606,7 @@ async function resolveUI(id) {
   const d = diffHTML(ep.conflict.remoteText, ep.text);
   const r = await dialog({ title: '어느 원고를 쓸까요?', wide: true,
     html: `<p class="mute small">－ 드라이브에만 있는 줄 ${d.dels} · ＋ 이 기기에만 있는 줄 ${d.adds}. 무엇을 골라도 두 버전 모두 수정 기록에 남아요.</p><div class="diff">${d.html}</div>`,
-    buttons: [{ label: '나중에', value: 'cancel' }, { label: '둘 다 보관 (사본 회차)', value: 'both' }, { label: '드라이브 버전 쓰기', value: 'remote' }, { label: '이 기기 버전 쓰기', value: 'local', cls: 'gold' }] });
+    buttons: [{ label: '나중에', value: 'cancel' }, { label: '둘 다 보관 (드라이브 것은 사본 회차로)', value: 'both' }, { label: '드라이브 것', value: 'remote' }, { label: '내 기기 것', value: 'local', cls: 'gold' }] });
   if (r === 'cancel') return;
   const res = await Drive.resolveConflict(id, r, async (e, remoteText) => {
     const cp = await newEpisode(e.workId, { text: remoteText, title: (e.title || labelOf(e)) + ' (드라이브 사본)', order: (e.order ?? 0) + 0.5 });
@@ -667,7 +873,7 @@ async function backupAll() {
 }
 
 document.addEventListener('click', async e => {
-  if (e.target.id === 'btnReauth') { try { await Drive.connectNow(S.clientId, { silent: true }).catch(async er => { if (!er.notReady) throw er; await Drive.loadGIS(); return Drive.connectNow(S.clientId, { silent: true }); }); runSync('manual'); } catch (er) { toast(er.message, 6000, 'oops'); } }
+  if (e.target.id === 'btnReauth') reconnect();
   if (e.target.id === 'btnSyncNow') runSync('manual');
 });
 
@@ -699,6 +905,7 @@ function showTab(t, { initial, keep } = {}) {
   $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.view').forEach(v => { const on = v.id === 'v' + cap(t); v.hidden = !on; v.classList.toggle('on', on); });
   if (t !== 'note') document.body.classList.remove('editing');
+  if (t !== 'note' && !initial) db.kv.set('lastView', 'list');
   else if (!keep && S.cur && isDesk() && $('#editorView').hidden) openEpisode(S.cur);
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
   rerenderTab();
@@ -1143,6 +1350,8 @@ async function boot() {
   if (last && findEp(last)) { S.cur = last; } // 홈의 「이어 쓰기」로 바로 열 수 있게
   await restoreTimer();
   showTab((location.hash.slice(1) || 'home'), { initial: true });
+  // 다시 열면: 마지막에 쓰던 회차가 열려 있었다면 그 회차·그 자리로 바로
+  if (S.cur && ['', '#note', '#home'].includes(location.hash) && (await db.kv.get('lastView')) === 'editor') await openEpisode(S.cur);
   if ('serviceWorker' in navigator && location.protocol !== 'file:' && !window.__YW_NO_SW) {
     const hadCtl = !!navigator.serviceWorker.controller; let reloading = false;
     // 새 버전이 설치되면 원고를 먼저 저장하고 한 번 새로고침 → 예전 화면이 남지 않게
