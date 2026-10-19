@@ -41,6 +41,7 @@ class FakeDrive:
         if mm:
             f = self.files.get(mm.group(1))
             if not f: return ok({'error':'nf'},404)
+            if m == 'GET' and qs.get('alt',[''])[0] == 'media': return route.fulfill(status=200, content_type='application/json', body=(f.get('content') or '').encode('utf-8'))
             if m == 'GET': return ok(self.meta(f))
             if m == 'PATCH':
                 body = json.loads(req.post_data or '{}'); f.update({k:v for k,v in body.items()}); f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1); return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
@@ -51,7 +52,7 @@ class FakeDrive:
             metaPart = parts[1].split(b'\r\n\r\n',1)[1].rsplit(b'\r\n',1)[0]
             hdr, media = parts[2].split(b'\r\n\r\n',1); media = media[:-2] if media.endswith(b'\r\n') else media
             meta = json.loads(metaPart.decode())
-            isText = b'text/plain' in hdr or b'text/csv' in hdr
+            isText = b'text/plain' in hdr or b'text/csv' in hdr or b'application/json' in hdr
             content = media.decode('utf-8') if isText else None
             mm = re.match(r'^/upload/drive/v3/files/([^/]+)$', path)
             if m == 'POST':
@@ -59,13 +60,13 @@ class FakeDrive:
                 f = {'id':fid,'name':meta.get('name'),'mimeType':meta.get('mimeType') or hdr.split(b'Content-Type: ')[1].split(b'\r\n')[0].decode(),'parents':meta.get('parents') or [],'appProperties':meta.get('appProperties') or {},'description':meta.get('description'),'modifiedTime':self.now(),'trashed':False,'content':content,'bytes':len(media),'version':'1'}
                 self.files[fid]=f
                 if self.docs: self.bump.add(fid)
-                return ok({'id':fid,'modifiedTime':f['modifiedTime']})
+                return ok({'id':fid,'modifiedTime':f['modifiedTime'],'version':f['version']})
             if m == 'PATCH' and mm:
                 f = self.files.get(mm.group(1))
                 if not f: return ok({'error':'nf'},404)
                 f.update({k:v for k,v in meta.items()}); f['content']=content; f['modifiedTime']=self.now(); f['version']=str(int(f.get('version','1'))+1)
                 if self.docs: self.bump.add(f['id'])
-                return ok({'id':f['id'],'modifiedTime':f['modifiedTime']})
+                return ok({'id':f['id'],'modifiedTime':f['modifiedTime'],'version':f['version']})
         return ok({'error':'unhandled '+m+' '+path},400)
 
 GIS_STUB = """
