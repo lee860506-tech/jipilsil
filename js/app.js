@@ -5,6 +5,7 @@ import { Dictation, Reader, Recorder, ttsSupported, sttSupported, recSupported, 
 import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, decodeText, detectEpisodeNo, titleFromFilename,
   makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon, looseKey } from './util.js';
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
+import { NTYPE, noteToText, searchText } from './notes.js';
 
 const S = {
   works: [], eps: new Map(),   // workId -> episodes (정렬됨)
@@ -159,8 +160,8 @@ async function runSyncOnce(why) {
 }
 
 async function pendingCount() {
-  const eps = await db.all('episodes'); const ms = await db.all('memos'); const tb = await db.all('tombstones');
-  return eps.filter(e => e.dirty && !e.conflict).length + ms.filter(m => !m.driveFileId).length + tb.length + S.works.filter(w => w.dirty || !w.driveFolderId).length;
+  const eps = await db.all('episodes'); const ms = await db.all('memos'); const tb = await db.all('tombstones'); const nts = await db.all('notes');
+  return nts.filter(n => n.dirty || !n.base).length + eps.filter(e => e.dirty && !e.conflict).length + ms.filter(m => !m.driveFileId).length + tb.length + S.works.filter(w => w.dirty || !w.driveFolderId).length;
 }
 async function updateStatus() {
   const el = $('#saveStatus'); if (!el) return;
@@ -198,6 +199,7 @@ Drive.setHooks({
   snapshot: (ep, reason, label) => snapshot(ep, reason, label),
   onStatus: s => { S.syncState = s; updateStatus(); },
   onChange: async ch => {
+    if (ch.notes) { if (ch.copies) toast(`설계 노트 ${ch.copies}개가 두 기기에서 따로 바뀌어서, 드라이브 버전을 「(다른 기기 버전)」 사본으로 함께 남겼어요`, 6000, 'oops'); if (S.tab === 'vault' && S.vaultTab === 'notes' && !$('#dlg').open) renderVault(); if (!$('#panel').hidden && paneTab === 'notes') renderPaneNotes(); return; }
     if (ch.conflictCleared && ch.episode === S.cur) { refreshConflictBanner(); updateStatus(); }
     if (ch.episode && ch.episode === S.cur && ch.textChanged) {
       const ep = await db.get('episodes', S.cur);
@@ -406,7 +408,7 @@ function showPane(tab) { paneTab = tab; $('#panel').hidden = false; $('#btnPanel
 function renderPanel() {
   $$('.panel-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === paneTab));
   $$('.panel-body').forEach(p => p.hidden = p.dataset.pane !== paneTab);
-  if (paneTab === 'hist') renderHist(); if (paneTab === 'voice') renderVoice();
+  if (paneTab === 'hist') renderHist(); if (paneTab === 'voice') renderVoice(); if (paneTab === 'notes') renderPaneNotes();
 }
 async function renderHist() {
   const ep = findEp(S.cur); if (!ep) return;
@@ -1172,13 +1174,14 @@ function renderWorks() {
 }
 
 // ---------- 보관함: 아이디어 사진 · 북마크 · 음성 메모 ----------
-S.vaultTab = 'photos'; S.photoFilter = 'all';
+S.vaultTab = 'notes'; S.photoFilter = 'all'; S.noteType = 'all'; S.noteWork = 'all'; S.noteQ = '';
 const vaultURLs = [];
 async function renderVault() {
   vaultURLs.splice(0).forEach(u => URL.revokeObjectURL(u));
   const v = $('#vVault'); const vt = S.vaultTab;
   let body = '';
-  if (vt === 'photos') {
+  if (vt === 'notes') body = await notesBody();
+  else if (vt === 'photos') {
     const ps = (await db.all('photos')).sort((a, b) => b.createdAt - a.createdAt);
     const tags = [...new Set(ps.flatMap(p => p.tags || []))];
     const f = S.photoFilter;
@@ -1197,9 +1200,10 @@ async function renderVault() {
     body = ms.map(m => { const e = findEp(m.episodeId); const u = URL.createObjectURL(m.blob); vaultURLs.push(u); return `<div class="vm"><div class="vm-h"><b style="flex:1;font-size:.85rem">${e ? esc(workOf(e)?.title || '') + ' · ' + esc(labelOf(e)) : '지워진 회차'} · ${esc(m.title || fmtTime(m.createdAt))}</b><span class="bdg ${m.driveFileId ? 'ok' : 'wait'}">${m.driveFileId ? '☁' : '●'}</span></div><audio controls preload="metadata" src="${u}"></audio></div>`; }).join('') ||
       `<div class="empty-box card"><img src="${STK.oops}" alt="">음성 메모가 없어요. 노트에서 ⏺ 녹음을 눌러 아이디어를 남겨요.</div>`;
   }
-  v.innerHTML = `<div class="wrap"><div class="hello"><div><h2>보관함</h2><p>영감과 아이디어를 모아 두는 곳</p></div></div>
-    <div class="seg" style="margin-bottom:12px"><button data-vt="photos" class="${vt === 'photos' ? 'on' : ''}">아이디어 사진함</button><button data-vt="marks" class="${vt === 'marks' ? 'on' : ''}">북마크</button><button data-vt="voice" class="${vt === 'voice' ? 'on' : ''}">음성 메모</button></div>${body}</div>`;
+  v.innerHTML = `<div class="wrap"><div class="hello"><div><h2>보관함</h2><p>소스·아이디어·시퀀스, 사진과 북마크를 모아 두는 곳</p></div></div>
+    <div class="seg vseg" style="margin-bottom:12px"><button data-vt="notes" class="${vt === 'notes' ? 'on' : ''}">설계 노트</button><button data-vt="photos" class="${vt === 'photos' ? 'on' : ''}">사진함</button><button data-vt="marks" class="${vt === 'marks' ? 'on' : ''}">북마크</button><button data-vt="voice" class="${vt === 'voice' ? 'on' : ''}">음성 메모</button></div>${body}</div>`;
   v.querySelectorAll('[data-vt]').forEach(b => b.onclick = () => { S.vaultTab = b.dataset.vt; renderVault(); });
+  if (vt === 'notes') bindNotes(v);
   v.querySelectorAll('[data-pf]').forEach(b => b.onclick = () => { S.photoFilter = b.dataset.pf; renderVault(); });
   v.querySelector('#pCam')?.addEventListener('click', () => { $('#photoCam').value = ''; $('#photoCam').click(); });
   v.querySelector('#pPick')?.addEventListener('click', () => { $('#photoPick').value = ''; $('#photoPick').click(); });
@@ -1273,6 +1277,153 @@ async function photoEditor(id, isNew) {
   URL.revokeObjectURL(u);
   if (S.tab === 'vault') renderVault();
 }
+
+// ---------- 설계 노트: 소스 · 아이디어 · 시퀀스 ----------
+const noteWorkTitle = n => S.works.find(w => w.id === n.workId)?.title || '';
+const noteEpLabel = n => { if (!n.episodeId) return ''; const e = findEp(n.episodeId); return e ? labelOf(e) + (e.title ? ' ' + e.title : '') : ''; };
+async function allNotes() { return (await db.all('notes')).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt); }
+function noteCard(n) {
+  const T = NTYPE[n.type] || NTYPE.idea; const w = noteWorkTitle(n); const el = noteEpLabel(n);
+  const prev = n.type === 'seq' ? (n.beats || []).slice(0, 4).map((b, i) => `<li class="${b.done ? 'done' : ''}">${esc(b.text)}</li>`).join('') : '';
+  return `<div class="ncard t-${n.type}" data-n="${n.id}"><button class="n-main" data-open>
+    <span class="n-top"><span class="n-type">${T.icon} ${T.label}</span>${n.pinned ? '<span class="n-pin">📌</span>' : ''}${w ? `<span class="n-work">${esc(w)}${el ? ' · ' + esc(el) : ''}</span>` : ''}${n.dirty || !n.base ? '<i class="n-sync" title="드라이브 대기">●</i>' : '<i class="n-sync ok" title="드라이브 저장됨">☁</i>'}</span>
+    <b class="n-title">${esc(n.title || '(제목 없음)')}</b>
+    ${n.type === 'seq' ? `<ol class="n-beats">${prev}</ol>${(n.beats || []).length > 4 ? `<span class="mute small">… 외 ${(n.beats.length - 4)}장면</span>` : ''}` : `<span class="n-body">${esc((n.body || '').slice(0, 160))}</span>`}
+    ${n.cite || n.url ? `<span class="n-cite">${esc(n.cite || '')}${n.cite && n.url ? ' · ' : ''}${n.url ? esc(n.url.replace(/^https?:\/\//, '').slice(0, 40)) : ''}</span>` : ''}
+    ${n.tags?.length ? `<span class="n-tags">${n.tags.map(t => '#' + esc(t)).join(' ')}</span>` : ''}
+  </button><button class="icon-btn sm n-copy" data-copy title="ChatGPT로 가져갈 노트 복사" aria-label="노트 복사">📋</button></div>`;
+}
+async function notesBody() {
+  const ns = await allNotes(); const t = S.noteType, wf = S.noteWork, q = S.noteQ.trim().toLowerCase();
+  const shown = ns.filter(n => (t === 'all' || n.type === t) && (wf === 'all' || (wf === 'common' ? !n.workId : n.workId === wf)) && (!q || searchText(n, noteWorkTitle(n)).includes(q)));
+  const cnt = k => ns.filter(n => n.type === k).length;
+  return `<div class="tbl-tools n-add"><button class="btn brand" data-new="idea">💡 아이디어</button><button class="btn soft" data-new="source">📎 소스</button><button class="btn soft" data-new="seq">🧭 시퀀스</button></div>
+    <label class="search n-search"><span aria-hidden="true">⌕</span><input id="noteQ" type="search" placeholder="노트 검색 (제목·내용·#태그·장면)" value="${esc(S.noteQ)}" autocomplete="off"></label>
+    <div class="chips"><button class="chip ${t === 'all' ? 'on' : ''}" data-nt="all">전체 ${ns.length}</button>${Object.entries(NTYPE).map(([k, v]) => `<button class="chip ${t === k ? 'on' : ''}" data-nt="${k}">${v.icon} ${v.label} ${cnt(k)}</button>`).join('')}
+      <select id="noteWork" class="chip sel" aria-label="작품으로 거르기"><option value="all">모든 작품</option><option value="common" ${wf === 'common' ? 'selected' : ''}>공통 (우주 설정 등)</option>${S.works.map(w => `<option value="${w.id}" ${wf === w.id ? 'selected' : ''}>${esc(w.title)}</option>`).join('')}</select></div>
+    <div class="note-grid">${shown.map(noteCard).join('')}</div>
+    ${shown.length ? '' : `<div class="empty-box card"><img src="${STK.focus}" alt="">${ns.length ? '찾는 노트가 없어요.' : '참고한 자료, 번뜩인 아이디어, 장면 순서를 여기에 모아 두세요.<br>노트에서 쓰다가 💡 설계 버튼으로 바로 적을 수도 있어요.'}</div>`}
+    <p class="mute small">설계 노트는 이 기기에 먼저 저장되고, 드라이브 「집필실/설계 노트.json」으로 기기끼리 맞춰져요.</p>`;
+}
+function bindNotes(v) {
+  v.querySelectorAll('[data-new]').forEach(b => b.onclick = () => noteEditor(null, { type: b.dataset.new, workId: ['all', 'common'].includes(S.noteWork) ? null : S.noteWork }));
+  v.querySelectorAll('[data-nt]').forEach(b => b.onclick = () => { S.noteType = b.dataset.nt; renderVault(); });
+  const ws = v.querySelector('#noteWork'); if (ws) ws.onchange = () => { S.noteWork = ws.value; renderVault(); };
+  const qi = v.querySelector('#noteQ'); let qt;
+  if (qi) qi.oninput = () => { clearTimeout(qt); qt = setTimeout(async () => { S.noteQ = qi.value; const pos = qi.selectionStart; await renderVault(); const n = $('#noteQ'); n.focus(); n.setSelectionRange(pos, pos); }, 250); };
+  bindNoteCards(v);
+}
+function bindNoteCards(root) {
+  root.querySelectorAll('.ncard').forEach(c => {
+    c.querySelector('[data-open]').onclick = () => noteEditor(c.dataset.n);
+    c.querySelector('[data-copy]').onclick = async () => { const n = await db.get('notes', c.dataset.n); if (n) copyNote(n); };
+  });
+}
+async function copyNote(n) { const ok = await copyText(noteToText(n, { workTitle: noteWorkTitle(n), epLabel: noteEpLabel(n) })); toast(ok ? '📋 노트를 복사했어요. ChatGPT에 붙여 넣으세요' : '복사하지 못했어요. 길게 눌러 직접 복사해 주세요', 2800, ok ? 'great' : 'oops'); }
+async function renderPaneNotes() {
+  const ep = S.cur && findEp(S.cur); const box = $('#paneNotes'); if (!box) return;
+  const ns = (await allNotes()).filter(n => !ep || n.workId === ep.workId || !n.workId);
+  const mine = ns.filter(n => ep && n.episodeId === ep.id), rest = ns.filter(n => !(ep && n.episodeId === ep.id));
+  box.innerHTML = `<button class="btn brand small" id="pnNew" style="width:100%">＋ 설계 노트 적기</button>
+    ${mine.length ? `<div class="pn-h">이 회차</div>${mine.map(noteCard).join('')}` : ''}${rest.length ? `<div class="pn-h">이 작품 · 공통</div>${rest.map(noteCard).join('')}` : ''}
+    ${ns.length ? '' : '<p class="mute small">이 작품의 설계 노트가 아직 없어요.</p>'}`;
+  box.querySelector('#pnNew').onclick = () => quickNote();
+  bindNoteCards(box);
+}
+// 원고에서 바로 적기 — 커서·스크롤 위치를 그대로 돌려놓음
+let edBlurAt = 0; ed.addEventListener('blur', () => edBlurAt = Date.now());
+async function quickNote() {
+  const ep = S.cur && findEp(S.cur); const hadFocus = document.activeElement === ed || Date.now() - edBlurAt < 1000;
+  const st = { s: ed.selectionStart, e: ed.selectionEnd, top: ed.scrollTop, wy: scrollY };
+  const sel = ed.value.slice(st.s, st.e).trim();
+  await noteEditor(null, { type: sel ? 'source' : 'idea', body: sel ? sel : '', workId: ep?.workId || null, episodeId: ep?.id || null, cite: sel && ep ? `${workOf(ep)?.title || ''} ${labelOf(ep)}` : '' });
+  if (!ep || S.cur !== ep.id || $('#editorView').hidden) return;
+  ed.scrollTop = st.top; scrollTo(0, st.wy);
+  if (hadFocus) { ed.focus({ preventScroll: true }); ed.setSelectionRange(st.s, st.e); ed.scrollTop = st.top; }
+}
+async function noteEditor(id, preset = {}) {
+  const old = id ? await db.get('notes', id) : null; if (id && !old) return;
+  const n = old ? structuredClone(old) : { id: db.uid('n'), type: 'idea', title: '', body: '', url: '', cite: '', tags: [], beats: [], workId: null, episodeId: null, photoId: null, pinned: false, createdAt: Date.now(), ...preset };
+  if (n.type === 'seq' && !n.beats.length) n.beats = [{ id: db.uid('b'), text: '', done: false }];
+  let tagStr = (n.tags || []).join(' '); let photoURL = null;
+  const epOpts = wid => `<option value="">회차 없음</option>` + (S.eps.get(wid) || []).map((e, i) => `<option value="${e.id}" ${e.id === n.episodeId ? 'selected' : ''}>${esc(Drive.episodeLabel(e, i))} ${esc(e.title || '')}</option>`).join('');
+  const beatsHTML = () => n.beats.map((b, i) => `<div class="beat" data-i="${i}"><span class="bn">${i + 1}</span><label class="bchk" title="다 쓴 장면"><input type="checkbox" data-done ${b.done ? 'checked' : ''}></label><textarea data-bt rows="1" placeholder="장면·비트 (예: 옥상, 시안이 처음 거짓말한다)">${esc(b.text)}</textarea><span class="bbtn"><button type="button" class="icon-btn sm" data-up aria-label="위로" ${i ? '' : 'disabled'}>↑</button><button type="button" class="icon-btn sm" data-dn aria-label="아래로" ${i < n.beats.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="icon-btn sm" data-del aria-label="장면 삭제">✕</button></span></div>`).join('');
+  const photoHTML = async () => { if (!n.photoId) return ''; const p = await db.get('photos', n.photoId); if (!p) return ''; if (photoURL) URL.revokeObjectURL(photoURL); photoURL = URL.createObjectURL(p.blob); return `<div class="n-photo"><img src="${photoURL}" alt=""><button type="button" class="btn small ghost" id="nPhotoX">사진 빼기</button></div>`; };
+  const T = () => NTYPE[n.type];
+  const html = `<div class="seg n-tseg">${Object.entries(NTYPE).map(([k, v]) => `<button type="button" data-ty="${k}" class="${n.type === k ? 'on' : ''}">${v.icon} ${v.label}</button>`).join('')}</div>
+    <label class="fld">제목<input id="nTitle" value="${esc(n.title)}" placeholder="예: 시안의 첫 거짓말 / 2부 전개 / 가스라이팅 논문" maxlength="120"></label>
+    <div class="n-src" ${n.type === 'source' ? '' : 'hidden'}><label class="fld">출처 (책·작품·사람)<input id="nCite" value="${esc(n.cite || '')}" placeholder="예: 『사회적 동물』 3장" maxlength="200"></label>
+      <label class="fld">링크<input id="nUrl" type="url" inputmode="url" value="${esc(n.url || '')}" placeholder="https://"></label></div>
+    <label class="fld"><span id="nBodyL">${n.type === 'seq' ? '의도·감정선' : n.type === 'source' ? '내용·인용' : '내용'}</span><textarea id="nBody" class="n-ta" rows="${n.type === 'seq' ? 2 : 6}" placeholder="${esc(T().ph)}">${esc(n.body || '')}</textarea></label>
+    <div class="n-seq" ${n.type === 'seq' ? '' : 'hidden'}><div class="fld" style="margin-bottom:2px">장면 순서 <span class="mute small">(↑↓로 순서 바꾸기)</span></div><div id="nBeats" class="beats">${beatsHTML()}</div><button type="button" class="btn soft small" id="nAddBeat">＋ 장면 추가</button></div>
+    <div id="nPhotoBox">${await photoHTML()}</div>
+    <label class="fld">태그 (띄어쓰기로 구분)<input id="nTags" value="${esc(tagStr)}" placeholder="예: 우주 시안 복선 2부"></label>
+    <div class="row wrap"><label class="fld" style="flex:1 1 150px">작품<select id="nWork"><option value="">공통 (작품 없음)</option>${S.works.map(w => `<option value="${w.id}" ${w.id === n.workId ? 'selected' : ''}>${esc(w.title)}</option>`).join('')}</select></label>
+      <label class="fld" style="flex:1 1 150px">회차<select id="nEp">${epOpts(n.workId)}</select></label></div>
+    <div class="row wrap n-extra"><button type="button" class="btn ghost small" id="nPhoto">📷 사진 붙이기</button><label class="chk"><input type="checkbox" id="nPin" ${n.pinned ? 'checked' : ''}> 📌 위에 고정</label><button type="button" class="btn ghost small" id="nCopy">📋 ChatGPT용 복사</button></div>
+    ${old?.conflictOf ? '<p class="mute small">⚠ 두 기기에서 같은 노트를 따로 고쳐서 생긴 드라이브 쪽 사본이에요. 필요한 내용만 옮기고 지워도 돼요.</p>' : ''}`;
+  const grow = ta => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 220) + 'px'; };
+  const r = await dialog({ title: old ? `${T().icon} 설계 노트` : `${T().icon} 새 설계 노트`, wide: true, html,
+    buttons: [...(old ? [{ label: '삭제', value: 'del', cls: 'danger' }] : []), ...(n.episodeId && S.cur !== n.episodeId ? [{ label: '회차 열기', value: 'open' }] : []), { label: '닫기', value: 'cancel' }, { label: '저장', value: 'ok', cls: 'brand' }],
+    onOpen: f => {
+      const q = s => f.querySelector(s);
+      f.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') e.preventDefault(); });
+      q('#nTitle').oninput = e => n.title = e.target.value; q('#nBody').oninput = e => { n.body = e.target.value; };
+      q('#nCite').oninput = e => n.cite = e.target.value; q('#nUrl').oninput = e => n.url = e.target.value;
+      q('#nTags').oninput = e => tagStr = e.target.value; q('#nPin').onchange = e => n.pinned = e.target.checked;
+      q('#nWork').onchange = e => { n.workId = e.target.value || null; n.episodeId = null; q('#nEp').innerHTML = epOpts(n.workId); };
+      q('#nEp').onchange = e => n.episodeId = e.target.value || null;
+      f.querySelectorAll('[data-ty]').forEach(b => b.onclick = () => {
+        n.type = b.dataset.ty; f.querySelectorAll('[data-ty]').forEach(x => x.classList.toggle('on', x === b));
+        q('.n-src').hidden = n.type !== 'source'; q('.n-seq').hidden = n.type !== 'seq';
+        q('#nBodyL').textContent = n.type === 'seq' ? '의도·감정선' : n.type === 'source' ? '내용·인용' : '내용'; q('#nBody').placeholder = T().ph;
+        if (n.type === 'seq' && !n.beats.length) { n.beats.push({ id: db.uid('b'), text: '', done: false }); drawBeats(); }
+        f.closest('dialog').querySelector('h3').textContent = `${T().icon} ${old ? '' : '새 '}설계 노트`;
+      });
+      const drawBeats = (focusI) => { q('#nBeats').innerHTML = beatsHTML(); q('#nBeats').querySelectorAll('textarea').forEach(grow); if (focusI != null) { const t = q(`#nBeats [data-i="${focusI}"] textarea`); t?.focus(); t?.scrollIntoView({ block: 'nearest' }); } };
+      const beats = q('#nBeats'); beats.querySelectorAll('textarea').forEach(grow);
+      beats.addEventListener('input', e => { const row = e.target.closest('.beat'); if (!row) return; const i = +row.dataset.i; if (e.target.matches('[data-bt]')) { n.beats[i].text = e.target.value; grow(e.target); } });
+      beats.addEventListener('change', e => { const row = e.target.closest('.beat'); if (row && e.target.matches('[data-done]')) n.beats[+row.dataset.i].done = e.target.checked; });
+      beats.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.matches('[data-bt]')) { e.preventDefault(); const i = +e.target.closest('.beat').dataset.i; n.beats.splice(i + 1, 0, { id: db.uid('b'), text: '', done: false }); drawBeats(i + 1); } });
+      beats.addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return; const i = +b.closest('.beat').dataset.i;
+        if (b.matches('[data-up]') && i > 0) { [n.beats[i - 1], n.beats[i]] = [n.beats[i], n.beats[i - 1]]; drawBeats(); q(`#nBeats [data-i="${i - 1}"] [data-up]`)?.focus(); }
+        else if (b.matches('[data-dn]') && i < n.beats.length - 1) { [n.beats[i + 1], n.beats[i]] = [n.beats[i], n.beats[i + 1]]; drawBeats(); q(`#nBeats [data-i="${i + 1}"] [data-dn]`)?.focus(); }
+        else if (b.matches('[data-del]')) { n.beats.splice(i, 1); drawBeats(); }
+      });
+      q('#nAddBeat').onclick = () => { n.beats.push({ id: db.uid('b'), text: '', done: false }); drawBeats(n.beats.length - 1); };
+      const bindPhotoX = () => { const x = q('#nPhotoX'); if (x) x.onclick = () => { n.photoId = null; q('#nPhotoBox').innerHTML = ''; }; }; bindPhotoX();
+      q('#nPhoto').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = async () => {
+        const file = inp.files?.[0]; if (!file) return;
+        try { const rr = await compressImage(file); const d = new Date();
+          const ph = { id: db.uid('p'), blob: rr.blob, mime: rr.mime, w: rr.w, h: rr.h, caption: n.title || '설계 노트 사진', tags: [], workId: n.workId || null, episodeId: n.episodeId || null, createdAt: Date.now(), name: `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}_${Math.random().toString(36).slice(2, 5)}.${rr.mime === 'image/webp' ? 'webp' : 'jpg'}`, driveFileId: null, metaDirty: false, origBytes: file.size };
+          await db.put('photos', ph); n.photoId = ph.id; q('#nPhotoBox').innerHTML = await photoHTML(); bindPhotoX();
+        } catch (e) { toast(e.message, 3500, 'oops'); } }; inp.click(); };
+      q('#nCopy').onclick = () => copyNote({ ...n, tags: tagStr.split(/[\s,#]+/).filter(Boolean), beats: n.beats.filter(b => b.text.trim()) });
+    } });
+  if (photoURL) URL.revokeObjectURL(photoURL);
+  const tags = tagStr.split(/[\s,#]+/).map(t => t.trim()).filter(Boolean).slice(0, 16);
+  if (r === 'ok' || r === 'open') {
+    n.title = n.title.trim(); n.tags = tags; n.beats = n.type === 'seq' ? n.beats.filter(b => b.text.trim()) : (n.beats || []).filter(b => b.text.trim());
+    const empty = !n.title && !n.body.trim() && !n.url && !n.beats.length && !n.photoId;
+    if (!(empty && !old)) {
+      if (!old || JSON.stringify({ ...old, dirty: 0, base: 0, updatedAt: 0 }) !== JSON.stringify({ ...n, dirty: 0, base: 0, updatedAt: 0 })) {
+        n.updatedAt = Date.now(); n.dirty = true; if (!old) n.base = ''; await db.put('notes', n);
+        if (n.photoId) scheduleSync(2000); else scheduleSync(3000);
+        if (r === 'ok') toast(`${T().icon} 설계 노트를 저장했어요`, 2000, 'great');
+      }
+    }
+    if (r === 'open' && n.episodeId) { await openEpisode(n.episodeId); return; }
+  } else if (r === 'del' && old) {
+    if (await confirmBox('설계 노트 삭제', `「${esc(old.title || '제목 없음')}」을 지울까요?`, '삭제', 'danger')) {
+      await db.del('notes', old.id); const dl = (await db.kv.get('noteDel')) || {}; dl[old.id] = Date.now(); await db.kv.set('noteDel', dl);
+      toast('설계 노트를 지웠어요'); scheduleSync(3000);
+    }
+  }
+  if (S.tab === 'vault' && S.vaultTab === 'notes') renderVault();
+  if (!$('#panel').hidden && paneTab === 'notes') renderPaneNotes();
+}
+$('#btnNote').addEventListener('click', () => quickNote());
 
 // ---------- 마이 ----------
 async function renderMy() {

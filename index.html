@@ -91,6 +91,7 @@
         <button class="tb" id="btnSnap" title="지금 버전 저장"><span>✦</span><b>버전 저장</b></button>
         <button class="tb" id="btnCopy" title="ChatGPT로 가져갈 원고 복사"><span>📋</span><b>복사</b></button>
         <button class="tb" id="btnRevise" title="ChatGPT 수정본 안전하게 반영"><span>✎</span><b>수정본 반영</b></button>
+        <button class="tb" id="btnNote" title="설계 노트에 바로 적기 (원고 자리는 그대로)"><span>💡</span><b>설계</b></button>
         <button class="tb" id="btnMark" title="이 문단 북마크"><span>🔖</span><b>북마크</b></button>
         <button class="tb" id="btnTimerTb" title="집필 타이머"><span>⏱</span><b id="tbTimer">타이머</b></button>
         <button class="tb" id="btnPanel" title="메모·음성·버전"><span>☰</span><b>메모·기록</b></button>
@@ -108,12 +109,16 @@
         <aside id="panel" class="panel" hidden>
           <div class="panel-tabs" role="tablist">
             <button role="tab" data-tab="memo" class="on">메모</button>
+            <button role="tab" data-tab="notes">설계</button>
             <button role="tab" data-tab="voice">음성 메모</button>
             <button role="tab" data-tab="hist">수정 기록</button>
             <button class="icon-btn close" id="btnPanelClose" aria-label="닫기">✕</button>
           </div>
           <div class="panel-body" data-pane="memo">
             <textarea id="epMemo" placeholder="이 회차의 메모 — 복선, 감정선, 다음 화 떡밥…"></textarea>
+          </div>
+          <div class="panel-body" data-pane="notes" hidden>
+            <div id="paneNotes" class="pane-notes"></div>
           </div>
           <div class="panel-body" data-pane="voice" hidden>
             <div id="voiceList" class="voice-list"></div>
