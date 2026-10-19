@@ -417,3 +417,18 @@ body.focus .focus-buddy{display:block}
 table.tbl td.open:nth-child(2){min-width:150px}
 table.tbl td input[data-f="oneLine"]{min-width:150px}
 table.tbl td select{min-width:84px}
+/* 설치 안내 */
+.install-card{display:flex;align-items:center;gap:12px;background:var(--card);border:1px dashed var(--sub);border-radius:18px;padding:12px 14px;margin:12px 0 4px;box-shadow:var(--shadow);animation:fadeUp .5s both}
+.install-card .t{flex:1;min-width:0}.install-card b{display:block;font-size:.92rem}.install-card small{display:block;color:var(--mute);font-size:.76rem;line-height:1.45}
+.install-card .ib{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.install-card a.btn{text-decoration:none}
+ol.steps{padding-left:1.3em;line-height:1.9;margin:4px 0 10px}
+/* 넓은 화면 (PC) */
+@media (min-width:1200px){
+  .wrap{max-width:1200px;padding-left:32px;padding-right:32px}
+  .h-top{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:22px;align-items:start}
+  .h-side>.sec-t:first-child{margin-top:0}
+  .h-side .banners{grid-template-columns:1fr}
+  .photo-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+  .feat small{display:block}
+}

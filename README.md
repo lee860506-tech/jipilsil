@@ -5,7 +5,8 @@
 
 - 실행: <https://lee860506-tech.github.io/jipilsil/>
 - 드라이브 연결 방법: [DRIVE_SETUP.md](DRIVE_SETUP.md)
-- 폰: 크롬에서 열고 ⋮ → **홈 화면에 추가 / 앱 설치**
+- 폰: 크롬에서 열고 ⋮ → **홈 화면에 추가 / 앱 설치**, 또는 안드로이드 앱 [jipilsil.apk](https://github.com/lee860506-tech/jipilsil/releases/latest/download/jipilsil.apk) (크롬 기반 TWA · 구글 로그인 가능)
+- PC: 크롬·엣지 주소창의 설치 아이콘 ⊕ → 설치
 
 ## 기능
 - 홈 / 작품 / 노트 / 보관함 / 마이 탭, 시작 화면
