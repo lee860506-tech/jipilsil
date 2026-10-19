@@ -2,7 +2,7 @@
 // 원칙: 기기 저장이 먼저, 드라이브는 그다음. 덮어쓰기 전에는 항상 수정 기록을 남기고,
 // 양쪽이 모두 바뀌었으면 절대 몰래 덮어쓰지 않고 사용자에게 고르게 합니다.
 import * as db from './db.js';
-import { normalizeText, canon, pad2, hashText } from './util.js';
+import { normalizeText, canon, pad2, hashText, looseKey, learnNl, unNl } from './util.js';
 import { listRows, castRows, toCSV } from './tables.js';
 
 const API = 'https://www.googleapis.com/drive/v3';
@@ -138,7 +138,10 @@ async function ensureRoot() {
 
 export function episodeLabel(ep, idx) { return ep.label?.trim() || `${pad2(idx + 1)}화`; }
 export function driveName(ep, idx) { return (episodeLabel(ep, idx) + (ep.title ? ' ' + ep.title : '')).slice(0, 120); }
-const epMeta = (ep, idx) => JSON.stringify({ v: 1, title: ep.title || '', label: ep.label || '', order: ep.order ?? idx, status: ep.status || 'draft', oneLine: ep.oneLine || '', memo: (ep.memo || '').slice(0, 20000) });
+const epMeta = (ep, idx, extra = {}) => JSON.stringify({ v: 1, title: ep.title || '', label: ep.label || '', order: ep.order ?? idx, status: ep.status || 'draft', oneLine: ep.oneLine || '', memo: (ep.memo || '').slice(0, 20000), ...extra });
+// 구글 문서 내보내기 → 원고: 줄바꿈 규칙 되돌리고, 문서가 붙인 끝 줄바꿈은 뗌
+const fromDoc = (E, nl) => unNl(E, nl).replace(/\n+$/, '');
+const exKeyOf = E => hashText(canon(E));
 const workMeta = w => JSON.stringify({ v: 1, order: w.order ?? 0, cast: (w.cast || []).slice(0, 300) }).slice(0, 25000);
 function parseMeta(d) { try { return JSON.parse(d || '{}'); } catch (e) { return {}; } }
 
@@ -217,16 +220,45 @@ async function syncOnce() {
     if (!ep) {
       const wid = f.appProperties?.ywWorkId;
       if (!works.has(wid)) continue; // 작품 폴더가 없으면 건너뜀
-      const text = await exportText(f.id);
+      const E = await exportText(f.id); const text = fromDoc(E, m.nl);
       ep = { id: eid, workId: wid, order: m.order ?? 0, title: m.title || '', label: m.label || '', memo: m.memo || '', status: m.status || 'draft', oneLine: m.oneLine || '', text,
-        createdAt: Date.now(), updatedAt: Date.now(), rev: 0, dirty: false, drive: { fileId: f.id, modifiedTime: f.modifiedTime } };
+        createdAt: Date.now(), updatedAt: Date.now(), rev: 0, dirty: false, drive: { fileId: f.id, modifiedTime: f.modifiedTime, exKey: await exKeyOf(E), nl: m.nl || null } };
       await db.put('episodes', ep); hooks.onChange({ episode: eid, work: wid, created: true });
       continue;
     }
-    if (ep.conflict) continue; // 사용자 선택 대기 중
+    if (ep.conflict) {
+      // 예전에 잘못 잡힌 충돌(줄바꿈·공백만 다름)은 조용히 정리: 기기 글 유지, 두 버전은 수정 기록에 그대로
+      if (looseKey(ep.conflict.remoteText) === looseKey(ep.text)) {
+        await db.update('episodes', ep.id, cur => { if (!cur) return undefined; delete cur.conflict; cur.dirty = true; return cur; });
+        hooks.onChange({ episode: ep.id, work: ep.workId, conflictCleared: true });
+      }
+      continue; // 진짜 충돌은 사용자 선택 대기 중
+    }
     const known = ep.drive?.modifiedTime;
     if (ep.drive?.fileId === f.id && known === f.modifiedTime) continue; // 원격 변화 없음
-    const remoteText = await exportText(f.id);
+    const E = await exportText(f.id); const exKey = await exKeyOf(E);
+    const nl = ep.drive?.nl || m.nl || null;
+    const applyMeta = cur => { const t0 = JSON.stringify([cur.title, cur.label, cur.memo, cur.order, cur.status, cur.oneLine]);
+      cur.title = m.title ?? cur.title; cur.label = m.label ?? cur.label; cur.memo = m.memo ?? cur.memo; if (m.order != null) cur.order = m.order; cur.status = m.status ?? cur.status; cur.oneLine = m.oneLine ?? cur.oneLine;
+      return t0 !== JSON.stringify([cur.title, cur.label, cur.memo, cur.order, cur.status, cur.oneLine]); };
+    const setDrive = cur => { cur.drive = { ...(cur.drive || {}), fileId: f.id, modifiedTime: f.modifiedTime, exKey, nl }; cur.remoteMissing = false; };
+    if (ep.drive?.exKey && exKey === ep.drive.exKey) {
+      // 내가 올린 그대로 (구글 문서 변환·저장 시각만 바뀜) → 원격 변경 아님
+      let mc = false;
+      await db.update('episodes', ep.id, cur => { if (!cur) return undefined; setDrive(cur); if (!cur.dirty) mc = applyMeta(cur); return cur; });
+      if (mc) hooks.onChange({ episode: ep.id, work: ep.workId, pulled: true, textChanged: false });
+      continue;
+    }
+    const remoteText = fromDoc(E, nl);
+    if (looseKey(remoteText) === looseKey(ep.text)) {
+      // 줄바꿈·공백만 다름(구글 문서 왕복 흔적) → 같은 원고. 기기 글을 그대로 두고 조용히 넘어감
+      let metaOnly = false;
+      await db.update('episodes', ep.id, cur => { if (!cur) return undefined; setDrive(cur);
+        if (!cur.dirty) metaOnly = applyMeta(cur);
+        return cur; });
+      if (metaOnly) hooks.onChange({ episode: ep.id, work: ep.workId, pulled: true, textChanged: false });
+      continue;
+    }
     if (!ep.dirty) {
       // 기기에서는 안 바뀌고 드라이브만 바뀜 → 덮기 전에 기록 남기고 반영
       const changed = canon(remoteText) !== canon(ep.text);
@@ -237,18 +269,18 @@ async function syncOnce() {
         if (changed) { cur.text = remoteText; cur.rev = (cur.rev || 0) + 1; }
         cur.title = m.title ?? cur.title; cur.label = m.label ?? cur.label; cur.memo = m.memo ?? cur.memo; if (m.order != null) cur.order = m.order;
         cur.status = m.status ?? cur.status; cur.oneLine = m.oneLine ?? cur.oneLine;
-        cur.drive = { fileId: f.id, modifiedTime: f.modifiedTime }; cur.remoteMissing = false; cur.dirty = false;
+        setDrive(cur); cur.dirty = false;
         return cur;
       });
       if (raced) { if (busy) busy.again = true; continue; }
       hooks.onChange({ episode: ep.id, work: ep.workId, pulled: true, textChanged: changed, prevText: ep.text });
     } else if (canon(remoteText) === canon(ep.text)) {
-      await db.update('episodes', ep.id, cur => cur && (cur.drive = { ...(cur.drive || {}), fileId: f.id, modifiedTime: f.modifiedTime }, cur.remoteMissing = false, cur)); // 내용 같음 → 메타만 올리면 됨
+      await db.update('episodes', ep.id, cur => cur && (setDrive(cur), cur)); // 내용 같음 → 메타만 올리면 됨
     } else {
       // 양쪽 모두 바뀜 → 둘 다 보관하고 선택을 기다림
       await hooks.snapshot(ep, 'conflict-local', '충돌: 이 기기 버전');
       await hooks.snapshot({ ...ep, text: remoteText }, 'conflict-remote', '충돌: 드라이브 버전');
-      const conflict = { remoteText, remoteModifiedTime: f.modifiedTime, fileId: f.id, at: Date.now() };
+      const conflict = { remoteText, remoteModifiedTime: f.modifiedTime, fileId: f.id, exKey, nl, at: Date.now() };
       const saved = await db.update('episodes', ep.id, cur => cur && (cur.conflict = conflict, cur));
       hooks.onConflict(saved || ep);
     }
@@ -302,9 +334,16 @@ async function syncOnce() {
         const mp = multipart(meta, ep.text || '', 'text/plain; charset=UTF-8');
         res = await api(`${UP}/files/${ep.drive.fileId}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j);
       }
+      // 올린 직후 구글 문서가 어떻게 내보내는지 확인 → 줄바꿈 규칙과 「내가 올린 모양」을 기억 (다른 기기도 설명에서 읽음)
+      let exKey = null, nl = ep.drive?.nl || null;
+      try {
+        const E0 = await exportText(res.id); exKey = await exKeyOf(E0); nl = learnNl(ep.text || '', E0) || nl;
+        const r2 = await api(`${API}/files/${res.id}?fields=id,modifiedTime`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: epMeta(ep, i, { ex: exKey, nl }) }) }).then(j);
+        res.modifiedTime = r2.modifiedTime || res.modifiedTime;
+      } catch (e) { if (e instanceof NeedAuth) throw e; }
       const cur = await db.update('episodes', ep.id, c => {
         if (!c) return undefined;
-        c.drive = { fileId: res.id, modifiedTime: res.modifiedTime, syncedAt: Date.now() };
+        c.drive = { fileId: res.id, modifiedTime: res.modifiedTime, syncedAt: Date.now(), exKey, nl };
         if (c.rev === rev && (c.title || '') === (ep.title || '') && (c.memo || '') === (ep.memo || '') && (c.label || '') === (ep.label || '') && c.order === ep.order) c.dirty = false;
         return c;
       });
@@ -399,7 +438,7 @@ export async function resolveConflict(epId, choice, makeCopy) {
     await makeCopy(ep, c.remoteText); // 드라이브 버전을 새 회차로 보관
     ep.dirty = true;                   // 이 회차는 기기 버전 유지
   }
-  ep.drive = { ...(ep.drive || {}), fileId: c.fileId, modifiedTime: c.remoteModifiedTime };
+  ep.drive = { ...(ep.drive || {}), fileId: c.fileId, modifiedTime: c.remoteModifiedTime, exKey: c.exKey || ep.drive?.exKey, nl: c.nl || ep.drive?.nl };
   delete ep.conflict;
   await db.put('episodes', ep);
   return ep;

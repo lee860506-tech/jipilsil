@@ -3,7 +3,7 @@ import * as db from './db.js';
 import * as Drive from './drive.js';
 import { Dictation, Reader, Recorder, ttsSupported, sttSupported, recSupported, koVoices, onVoicesChanged } from './audio.js';
 import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, decodeText, detectEpisodeNo, titleFromFilename,
-  makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon } from './util.js';
+  makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon, looseKey } from './util.js';
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
 
 const S = {
@@ -89,6 +89,7 @@ async function versionsOf(epId) { return (await db.byIndex('versions', 'episodeI
 async function snapshot(ep, reason = 'auto', label = '') {
   const vs = await versionsOf(ep.id);
   if (reason === 'auto' || reason === 'open') { if (vs[0] && canon(vs[0].text) === canon(ep.text)) return null; }
+  else if (reason !== 'manual') { const same = vs.find(x => x.reason === reason); if (same && canon(same.text) === canon(ep.text)) return null; } // 같은 이유·같은 내용은 한 번만 (여러 번 확인해도 기록이 쌓이지 않게)
   if (!ep.text && !vs.length && reason !== 'manual') return null;
   const v = { id: db.uid('v'), episodeId: ep.id, workId: ep.workId, text: ep.text || '', title: ep.title || '', at: Date.now(), reason, label, chars: counts(ep.text).all };
   await db.put('versions', v);
@@ -138,7 +139,13 @@ function scheduleSync(delay = 5000) {
   clearTimeout(syncT);
   syncT = setTimeout(() => runSync('auto'), delay);
 }
-async function runSync(why) {
+function runSync(why) {
+  // 한 번에 하나만: 진행 중이면 끝난 뒤 한 번 더 (focus·visibility·타이머가 겹쳐도 중복 확인 없음)
+  if (S.syncP) { S.syncAgain = S.syncAgain || why; return S.syncP; }
+  S.syncP = (async () => { try { await runSyncOnce(why); while (S.syncAgain) { const w = S.syncAgain; S.syncAgain = null; await runSyncOnce(w); } } finally { S.syncP = null; } })();
+  return S.syncP;
+}
+async function runSyncOnce(why) {
   if (!navigator.onLine) { S.syncState = 'offline'; updateStatus(); return; }
   if (!Drive.hasValidToken()) { S.syncState = (await Drive.wasConnected()) ? 'needauth' : 'idle'; updateStatus(); return; }
   await flushSave();
@@ -191,9 +198,10 @@ Drive.setHooks({
   snapshot: (ep, reason, label) => snapshot(ep, reason, label),
   onStatus: s => { S.syncState = s; updateStatus(); },
   onChange: async ch => {
+    if (ch.conflictCleared && ch.episode === S.cur) { refreshConflictBanner(); updateStatus(); }
     if (ch.episode && ch.episode === S.cur && ch.textChanged) {
       const ep = await db.get('episodes', S.cur);
-      if (ep && (S.pending || canon(ed.value) !== canon(ch.prevText ?? ep.text) && canon(ed.value) !== canon(ep.text))) {
+      if (ep && looseKey(ed.value) !== looseKey(ep.text) && (S.pending || canon(ed.value) !== canon(ch.prevText ?? ep.text))) {
         // 받는 사이 이 기기에서도 썼어요 → 덮지 않고 둘 다 보관 + 선택 창
         S.pending = false; clearTimeout(saveT);
         const local = ed.value, title = $('#epTitle').value.trim();
@@ -596,9 +604,11 @@ async function restorePos(id) {
 
 // ================= 충돌 =================
 async function refreshConflictBanner() {
-  document.querySelector('.conflict-banner')?.remove();
-  const ep = S.cur && await db.get('episodes', S.cur); if (!ep?.conflict) return;
-  $('.ed-body').insertAdjacentHTML('beforebegin', `<div class="conflict-banner"><span>⚠ 이 회차가 기기와 드라이브(다른 기기·ChatGPT) 양쪽에서 바뀌었어요. 둘 다 안전하게 보관 중이에요.</span><button class="btn small gold" id="btnResolve">비교하고 고르기</button></div>`);
+  const id = S.cur; const ep = id && await db.get('episodes', id);
+  // 확인이 여러 번 겹쳐도 배너는 회차당 하나: 기다린 뒤 지우고 다시 그림 (덧붙이지 않음)
+  document.querySelectorAll('.conflict-banner').forEach(x => x.remove());
+  if (!ep?.conflict || S.cur !== id) return;
+  $('.ed-body').insertAdjacentHTML('beforebegin', `<div class="conflict-banner" data-ep="${ep.id}"><span>⚠ 이 회차가 기기와 드라이브(다른 기기·ChatGPT) 양쪽에서 바뀌었어요. 둘 다 안전하게 보관 중이에요.</span><button class="btn small gold" id="btnResolve">비교하고 고르기</button></div>`);
   $('#btnResolve').onclick = () => resolveUI(ep.id);
 }
 async function resolveUI(id) {

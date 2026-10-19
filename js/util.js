@@ -6,11 +6,38 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 export const pad2 = n => String(n).padStart(2, '0');
 
 export function normalizeText(t) {
-  return String(t ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  return String(t ?? '').replace(/^\uFEFF/, '').replace(/\r\n?|[\u000b\u2028\u2029]/g, '\n');
 }
 // 드라이브(구글 문서) 왕복 후에도 같은 원고로 볼 수 있게 비교용으로 정리
 export function canon(t) {
   return normalizeText(t).replace(/[ \t\u00a0]+$/gm, '').replace(/\n+$/, '').replace(/^\n+/, '');
+}
+// 공백·줄바꿈을 모두 뺀 비교 키: 구글 문서 왕복으로 생기는 줄바꿈·공백 차이는 같은 원고로 봄
+export function looseKey(t) { return normalizeText(t).normalize('NFC').replace(/[\s\u00a0\u200b\u2028\u2029\ufeff]+/g, ''); }
+// 구글 문서가 줄바꿈 수를 바꾸는 규칙 배우기: 올린 글(T) ↔ 내보낸 글(E) 의 줄바꿈 묶음 길이 대응
+export function learnNl(T, E) {
+  const a = canon(T).split(/(\n+)/), b = canon(E).split(/(\n+)/);
+  if (a.length !== b.length) return null;
+  const map = {};
+  for (let i = 0; i < a.length; i++) {
+    if (i % 2 === 0) { if (a[i].replace(/\s+$/, '') !== b[i].replace(/\s+$/, '')) return null; continue; }
+    const k = a[i].length, v = b[i].length;
+    if (map[k] != null && map[k] !== v) return null; map[k] = v;
+  }
+  return map;
+}
+// 배운 규칙을 거꾸로 적용해 원래 줄바꿈으로 (모르면: 일정한 비율·차이로 추정)
+export function unNl(E, map) {
+  if (!map || !Object.keys(map).length || Object.entries(map).every(([k, v]) => +k === v)) return E;
+  const inv = {}; for (const [k, v] of Object.entries(map)) if (inv[v] == null || +k < inv[v]) inv[v] = +k;
+  const es = Object.entries(map).map(([k, v]) => [+k, v]);
+  const plus = es.every(([k, v]) => v === k + es[0][1] - es[0][0]) ? es[0][1] - es[0][0] : null;
+  const fac = es.every(([k, v]) => v === k * (es[0][1] / es[0][0])) ? es[0][1] / es[0][0] : null;
+  return E.replace(/\n+/g, run => {
+    const r = run.length; let n = inv[r];
+    if (n == null) n = plus != null ? r - plus : fac ? Math.round(r / fac) : r;
+    return '\n'.repeat(Math.max(1, n));
+  });
 }
 // 붙여넣기 정리: 줄 끝 공백 제거, 3줄 이상 빈 줄을 1줄로
 export function tidyPaste(t) {
