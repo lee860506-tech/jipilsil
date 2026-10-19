@@ -269,12 +269,18 @@ with sync_playwright() as p:
     c.set_offline(False); pg.wait_for_timeout(500)
 
     # ---- 드라이브 연결·동기화 (가짜 드라이브) ----
-    pg.click('#btnSettings'); pg.fill('#setCid', 'test-client.apps.googleusercontent.com')
+    pg.click('#btnSettings'); pg.fill('#setCid', ''); pg.click('#setConnect'); pg.wait_for_timeout(400)
+    m1 = pg.inner_text('#setMsg') if pg.is_visible('#setMsg') else ''
+    top = pg.evaluate("()=>{const t=document.querySelector('#toast');return t.matches(':popover-open') && !t.hidden}")
+    pg.fill('#setCid', 'abc'); pg.click('#setConnect'); pg.wait_for_timeout(300); m2 = pg.inner_text('#setMsg')
+    pg.screenshot(path=SHOTS + 'desktop_10a_settings_error.png')
+    check('연결 버튼: ID 없거나 틀리면 설정 창 안에 바로 안내 (+맨 위 토스트)', '비어' in m1 and '아쉽다' in m1 and top and '모양' in m2, f'{m1[:30]} / {m2[:30]}')
+    pg.fill('#setCid', '123456789-testclient.apps.googleusercontent.com')
     pg.screenshot(path=SHOTS + 'desktop_10_settings.png')
     pg.click('#setConnect'); pg.wait_for_timeout(500)
     pg.wait_for_function("()=>window.__yw.syncState==='synced'", timeout=20000); pg.wait_for_timeout(500)
     gis = pg.evaluate('window.__gisLast')
-    check('GIS 토큰 요청: drive.file 범위·입력한 클라이언트 ID', gis['scope'] == 'https://www.googleapis.com/auth/drive.file' and gis['client_id'] == 'test-client.apps.googleusercontent.com', str(gis))
+    check('GIS 토큰 요청: drive.file 범위·입력한 클라이언트 ID', gis['scope'] == 'https://www.googleapis.com/auth/drive.file' and gis['client_id'] == '123456789-testclient.apps.googleusercontent.com', str(gis))
     root = drive.by('root'); works = drive.by('work'); eps = drive.by('episode'); memos = drive.by('memo'); mf = drive.by('memofolder')
     check('드라이브: 「집필실」 폴더 + 작품 폴더', len(root) == 1 and root[0]['name'] == '집필실' and sorted(w['name'] for w in works) == ['RE:VERSE', '바람의 사수'] and all(w['parents'] == [root[0]['id']] for w in works))
     rv = [w for w in works if w['name'] == 'RE:VERSE'][0]
@@ -345,7 +351,7 @@ with sync_playwright() as p:
     tab(pg, 'note')
     check('모바일: 가로 스크롤 없음 (빈 서재)', no_hscroll(pg))
     pg.screenshot(path=SHOTS + 'mobile_01_empty.png')
-    pg.click('#btnSettings'); pg.fill('#setCid', 'test-client.apps.googleusercontent.com'); pg.click('#setConnect')
+    pg.click('#btnSettings'); pg.fill('#setCid', '123456789-testclient.apps.googleusercontent.com'); pg.click('#setConnect')
     pg.wait_for_function("()=>window.__yw.syncState==='synced'", timeout=20000); pg.wait_for_timeout(600)
     titles = pg.locator('.wt').all_inner_texts()
     check('새 기기: 드라이브에서 작품·회차 내려받기', sorted(titles) == ['RE:VERSE', '바람의 사수'] and pg.locator('.ep').count() >= 4, ', '.join(titles))

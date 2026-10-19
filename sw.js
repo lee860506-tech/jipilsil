@@ -1,11 +1,11 @@
 // 집필실 서비스워커 — 오프라인에서도 앱이 열리게 (원고 자체는 IndexedDB에 있음)
-const VERSION = 'jps-v2-__BUILD__';
+const VERSION = 'jps-v3-__BUILD__';
 const SHELL = ['./', 'index.html', 'config.js', 'css/app.css', 'js/app.js', 'js/db.js', 'js/drive.js', 'js/audio.js', 'js/util.js',
   'manifest.webmanifest', 'img/fighting.webp', 'img/great.webp', 'img/focus.webp', 'img/oops.webp', 'js/tables.js', 'icons/logo.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== 'jps-fonts').map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -25,7 +25,7 @@ self.addEventListener('fetch', e => {
   e.respondWith((async () => {
     const c = await caches.open(VERSION);
     try {
-      const r = await fetch(req);
+      const r = await fetch(req, { cache: 'no-cache' }); // 브라우저 HTTP 캐시(10분)도 건너뛰고 최신 확인
       if (r.ok) c.put(req, r.clone());
       return r;
     } catch (err) {

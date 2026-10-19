@@ -4,7 +4,7 @@
  * 클라이언트 보안 비밀(secret)은 절대 넣지 마세요 — 이 앱은 사용하지 않습니다.
  */
 window.YW_CONFIG = {
-  DEFAULT_CLIENT_ID: "267218184122-hdfevfgdfcha50rf9fuo0cncqbg1rl77.apps.googleusercontent.com",
+  DEFAULT_CLIENT_ID: "", // 이전 ID(267218184122-hdfev…)는 구글에서 삭제됨(deleted_client) → 새 ID를 받으면 여기에
   DRIVE_ROOT_NAME: "집필실",
   SCOPE: "https://www.googleapis.com/auth/drive.file"
 };
