@@ -1,0 +1,39 @@
+name: deploy-pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site (app code only)
+        run: |
+          mkdir -p _site
+          mkdir -p _site/icons _site/img
+          cp -r index.html config.js manifest.webmanifest sw.js css js _site/
+          cp icons/*.svg _site/icons/
+          for f in icons-b64/*.b64; do base64 -d "$f" > "_site/icons/$(basename "$f" .b64)"; done
+          for f in img-b64/*.b64; do base64 -d "$f" > "_site/img/$(basename "$f" .b64)"; done
+          sed -i "s/__BUILD__/${GITHUB_SHA::12}/" _site/sw.js
+          touch _site/.nojekyll
+          ls -la _site _site/icons
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
