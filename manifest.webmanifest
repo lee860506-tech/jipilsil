@@ -2,7 +2,7 @@
   "name": "집필실 · 쓰는 오늘, 완성의 내일로",
   "short_name": "집필실",
   "description": "초안부터 재독까지, 나만의 창작 메이트 — 작품·회차, 자동 저장, 구글 드라이브, 음성 입력·낭독",
-  "id": "./",
+  "id": "/jipilsil/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
