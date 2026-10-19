@@ -1,26 +1,21 @@
 name: deploy-pages
+# 앱 코드만 빌드해서 gh-pages 브랜치에 올려요 (원고는 저장소에 없어요).
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Build site (app code only)
         run: |
-          mkdir -p _site
           mkdir -p _site/icons _site/img
           cp -r index.html config.js manifest.webmanifest sw.js css js _site/
           cp icons/*.svg _site/icons/
@@ -28,12 +23,13 @@ jobs:
           for f in img-b64/*.b64; do base64 -d "$f" > "_site/img/$(basename "$f" .b64)"; done
           sed -i "s/__BUILD__/${GITHUB_SHA::12}/" _site/sw.js
           touch _site/.nojekyll
-          ls -la _site _site/icons
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          ls -la _site _site/icons _site/img
+      - name: Publish to gh-pages
+        run: |
+          cd _site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "deploy ${GITHUB_SHA::12}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
