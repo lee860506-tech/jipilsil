@@ -4,6 +4,8 @@
 import * as db from './db.js';
 import { normalizeText, canon, pad2, hashText, looseKey, learnNl, unNl } from './util.js';
 import { listRows, castRows, toCSV } from './tables.js';
+import { mergeNotes, contentOf, contentKey } from './notes.js';
+import { uid } from './db.js';
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UP = 'https://www.googleapis.com/upload/drive/v3';
@@ -420,6 +422,10 @@ async function syncOnce() {
     }
   }
 
+
+  // 11) 설계 노트 → 집필실 폴더의 「설계 노트.json」 하나 (노트 단위 양방향 병합, 양쪽 수정은 사본으로 둘 다 보관)
+  await syncNotes(rootId);
+
   await db.kv.set('lastSync', Date.now());
   hooks.onStatus('synced');
   return { ok: true };
@@ -443,3 +449,50 @@ export async function resolveConflict(epId, choice, makeCopy) {
   await db.put('episodes', ep);
   return ep;
 }
+
+// ---------- 설계 노트 ----------
+async function syncNotes(rootId) {
+  const st = (await db.kv.get('notesSync')) || {};
+  const localDel = (await db.kv.get('noteDel')) || {};
+  let local = await db.all('notes');
+  let fileId = st.fileId, ver = null;
+  if (fileId) {
+    try { const f = await api(`${API}/files/${fileId}?fields=id,version,trashed`).then(j); if (f.trashed) fileId = null; else ver = f.version; }
+    catch (e) { if (e instanceof NeedAuth) throw e; if (e.status === 404) fileId = null; else throw e; }
+  }
+  if (!fileId) {
+    const found = await listAll(`${prop('ywKind', 'notes')} and trashed=false`);
+    if (found[0]) { fileId = found[0].id; const f = await api(`${API}/files/${fileId}?fields=id,version`).then(j); ver = f.version; }
+  }
+  if (!fileId && !local.length && !Object.keys(localDel).length) return;
+  let remote = { notes: [], deleted: {} };
+  const known = fileId && st.fileId === fileId && st.version === ver; // 마지막으로 내가 올린(받은) 그대로면 받지 않음
+  if (fileId && !known) {
+    try { remote = JSON.parse(await api(`${API}/files/${fileId}?alt=media`).then(r => r.text())); } catch (e) { if (e instanceof NeedAuth) throw e; if (!(e instanceof SyntaxError)) throw e; }
+    remote.notes = remote.notes || []; remote.deleted = remote.deleted || {};
+  }
+  let m;
+  if (known) {
+    const changed = local.some(n => n.dirty || !n.base) || Object.keys(localDel).some(id => !(st.deleted || {})[id]);
+    m = { put: [], del: [], deleted: { ...(st.deleted || {}), ...localDel }, copies: 0, changed };
+  } else m = mergeNotes(local, localDel, remote, () => uid('n'));
+  for (const n of m.put) await db.update('notes', n.id, c => (c && c.dirty && c.updatedAt !== (local.find(x => x.id === n.id)?.updatedAt)) ? undefined : n); // 받는 사이 고친 건 건드리지 않음
+  for (const id of m.del) await db.del('notes', id);
+  if (m.put.length || m.del.length) hooks.onChange({ notes: true, copies: m.copies });
+  if (!m.changed && fileId) { await db.kv.set('notesSync', { fileId, version: ver, deleted: m.deleted }); await clearDel(localDel); return; }
+  local = await db.all('notes');
+  const sent = new Map(local.map(n => [n.id, n.updatedAt]));
+  const body = JSON.stringify({ v: 1, app: 'jipilsil', savedAt: new Date().toISOString(), notes: local.map(contentOfId), deleted: m.deleted }, null, 1);
+  // 올리기 직전 다시 확인: 그 사이 다른 기기가 올렸으면 다음 동기화에서 다시 합침
+  if (fileId) { const f = await api(`${API}/files/${fileId}?fields=version`).then(j); if (f.version !== ver) { await db.kv.set('notesSync', { ...st, fileId, version: null }); return; } }
+  let res;
+  if (fileId) { const mp = multipart({ name: '설계 노트.json' }, body, 'application/json'); res = await api(`${UP}/files/${fileId}?uploadType=multipart&fields=id,version`, { method: 'PATCH', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j); }
+  else { const mp = multipart({ name: '설계 노트.json', mimeType: 'application/json', parents: [rootId], appProperties: { ywKind: 'notes' }, description: '집필실 설계 노트(소스·아이디어·시퀀스) 백업 · 앱에서 고쳐 주세요' }, body, 'application/json'); res = await api(`${UP}/files?uploadType=multipart&fields=id,version`, { method: 'POST', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j); }
+  if (!res.version) { try { res.version = (await api(`${API}/files/${res.id}?fields=version`).then(j)).version; } catch (e) { if (e instanceof NeedAuth) throw e; } }
+  for (const n of local) await db.update('notes', n.id, c => c && c.updatedAt === sent.get(n.id) ? (c.dirty = false, c.base = contentKey(c), c) : undefined);
+  await db.kv.set('notesSync', { fileId: res.id, version: res.version, deleted: m.deleted });
+  await clearDel(localDel);
+  hooks.onChange({ notes: true });
+}
+async function clearDel(done) { const cur = (await db.kv.get('noteDel')) || {}; for (const id of Object.keys(done)) delete cur[id]; await db.kv.set('noteDel', cur); }
+const contentOfId = n => ({ id: n.id, ...contentOf(n), ...(n.conflictOf ? { conflictOf: n.conflictOf } : {}) });

@@ -1,6 +1,6 @@
 // IndexedDB 래퍼 — 모든 원고는 이 기기에 먼저 저장됩니다 (local-first)
 const DB_NAME = 'jipilsil';
-const DB_VER = 1;
+const DB_VER = 2;
 let _db;
 
 export function uid(p = '') {
@@ -29,6 +29,7 @@ export function openDB() {
       if (!d.objectStoreNames.contains('photos')) d.createObjectStore('photos', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('bookmarks')) d.createObjectStore('bookmarks', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('tombstones')) d.createObjectStore('tombstones', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('notes')) d.createObjectStore('notes', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
     };
     r.onsuccess = () => { _db = r.result; res(_db); };
