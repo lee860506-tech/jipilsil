@@ -65,7 +65,7 @@ with sync_playwright() as p:
     drive = FakeDrive()
     c = ctx_new(b, False, drive); pg = page_new(c, 'desktop')
     pg.goto(URL); pg.wait_for_selector('html.ready')
-    check('홈 화면: 이어 쓰기·새 회차·위젯·배너·기능 아이콘', pg.is_visible('#hContinue') and pg.is_visible('#hNewEp') and pg.locator('.wg').count() == 3 and pg.is_visible('.banner.streak') and pg.is_visible('.banner.reread') and pg.locator('.feat').count() == 5)
+    check('홈 화면: 이어 쓰기·새 회차·위젯·배너·기능 아이콘', pg.is_visible('#hContinue') and pg.is_visible('#hNewEp') and pg.locator('.wg').count() == 3 and pg.is_visible('.streak2') and pg.is_visible('.hero2 .h-art') and pg.locator('.feat').count() == 5)
     pg.screenshot(path=SHOTS + 'desktop_01_home_empty.png')
     pg.click('#installCard [data-install]'); pg.wait_for_selector('#dlg[open] ol.steps'); inst_txt = pg.inner_text('#dlg')
     pg.screenshot(path=SHOTS + 'desktop_01b_install.png'); pg.click('#dlg .dlg-btns button')
@@ -146,7 +146,7 @@ with sync_playwright() as p:
     pg.screenshot(path=SHOTS + 'desktop_05e_goal.png')
     pg.wait_for_timeout(2800)
     tab(pg, 'home'); pg.wait_for_timeout(300)
-    check('홈: 연속 집필 1일 · 오늘 체크', pg.inner_text('.banner.streak h4').startswith('1일') and pg.locator('.day.today.done').count() == 1)
+    check('홈: 연속 집필 1일 · 오늘 체크', pg.inner_text('.streak2 h4').startswith('1일') and pg.locator('.day.today.done').count() == 1)
     pg.screenshot(path=SHOTS + 'desktop_05f_home.png')
     tab(pg, 'note'); pg.locator('.ep [data-act="open"]').first.click(); pg.wait_for_timeout(300)
 

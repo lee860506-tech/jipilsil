@@ -117,7 +117,7 @@ async function flushSave() {
   clearTimeout(saveT);
   if (!S.pending || !S.cur) { S.pending = false; updateStatus(); return; }
   S.pending = false; S.saving = true; updateStatus();
-  const id = S.cur; const text = $('#editor').value; const title = $('#epTitle').value.trim(); const memo = $('#epMemo').value;
+  const id = S.cur; const pasted0 = S.pasteChars; const text = $('#editor').value; const title = $('#epTitle').value.trim(); const memo = $('#epMemo').value;
   try {
     let delta = 0;
     const u = await db.update('episodes', id, c => {
@@ -129,10 +129,10 @@ async function flushSave() {
     });
     if (u) {
       const ep = findEp(id); if (ep) Object.assign(ep, u);
-      const pasted = S.pasteChars; S.pasteChars = 0;
+      const pasted = pasted0; S.pasteChars = Math.max(0, S.pasteChars - pasted0); // 이 저장에 들어간 붙여넣기만 빼기
       if (delta > 0) await addWritten(Math.max(0, delta - pasted)); // 붙여넣은 글자는 '오늘의 집필'에서 빼고 직접 쓴 글자만
       await maybeAutoSnapshot(u); refreshEpRow(id); scheduleSync();
-    } else S.pasteChars = 0;
+    } else S.pasteChars = Math.max(0, S.pasteChars - pasted0);
   } catch (e) { console.warn(e); toast('저장 실패: ' + e.message); S.pending = true; }
   S.saving = false; updateStatus();
 }
@@ -1181,43 +1181,40 @@ async function renderHome() {
   const cur = (S.cur && findEp(S.cur)) || all[0];
   const week = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - 6 + i); return d; });
   const hr = new Date().getHours(); const hi = hr < 6 ? '깊은 밤에도 반가워요' : hr < 12 ? '좋은 아침이에요' : hr < 18 ? '좋은 오후예요' : '오늘 밤도 함께해요';
-  $('#vHome').innerHTML = `<div class="wrap">
-    <div class="hello"><div><h2>${hi}, ${esc(penLabel())} ♡</h2><p>초안부터 재독까지, 나만의 창작 메이트</p></div><img src="icons/logo.svg" width="46" height="46" alt=""></div>
+  const left = Math.max(0, goal - today);
+  $('#vHome').innerHTML = `<div class="wrap home2">
+    <div class="hello"><div><h2>${hi}, ${esc(penLabel())} ♡</h2><p>초안부터 재독까지, 나만의 창작 메이트</p></div><img class="h-moon" src="img/moonbook.webp" width="92" height="76" alt=""></div>
     <div class="h-top"><div class="h-main">
-    <section class="hero">
-      <span class="spark" style="left:52%;top:14px">✦</span><span class="spark" style="left:44%;bottom:22px;animation-delay:.8s;color:#FFB5D0">✦</span><span class="spark" style="left:62%;top:46%;animation-delay:1.4s;color:#A9D6FF">✦</span>
-      <div class="hero-txt"><h2>쓰는 오늘,<br>완성의 내일로</h2>
-        <p>${cur ? `<b>${esc(workOf(cur)?.title || '')}</b> · ${esc(labelOf(cur))}${cur.title ? ' ' + esc(cur.title) : ''}<br><span class="small">${fmtTime(cur.updatedAt)} 마지막 수정 · ${counts(cur.text).noSp.toLocaleString()}자</span>` : '첫 이야기를 시작해 볼까요?'}</p>
-        <div class="btns"><button class="btn brand" id="hContinue">${cur ? '이어 쓰기 →' : '집필 시작하기 →'}</button><button class="btn soft" id="hNewEp">＋ 새 회차 만들기</button></div></div>
-      <img class="stk" src="${STK.fighting}" alt="오늘도 파이팅!" width="176" height="174">
+    <section class="hero2">
+      <img class="h-art" src="img/hero_art.webp" width="560" height="550" alt="오늘도 파이팅! 하는 마스코트와 고양이">
+      <span class="spark" style="left:46%;top:16px">✦</span><span class="spark" style="left:8%;bottom:14px;animation-delay:.8s;color:#FFB5D0">✦</span>
+      <div class="hero-txt"><h2><span class="hand">쓰는 오늘,</span>완성의 내일로</h2>
+        <p>${cur ? `<b>${esc(workOf(cur)?.title || '')} · ${esc(labelOf(cur))}</b>${cur.title ? ' ' + esc(cur.title) : ''}<br><span class="small" title="${fmtTime(cur.updatedAt)}">마지막 수정 · ${counts(cur.text).noSp.toLocaleString()}자</span>` : '첫 이야기를 시작해 볼까요?<br><span class="small">한 문장이면 충분해요</span>'}</p>
+        <div class="btns"><button class="btn brand" id="hContinue">${ICON.pen}${cur ? '이어 쓰기 →' : '집필 시작하기 →'}</button><button class="btn soft" id="hNewEp">＋ 새 회차 만들기</button></div></div>
     </section>
-    ${installCardHTML()}
-    <div class="widgets">
-      <button class="wg" id="wgToday"><span class="ic lav">${ICON.pen}</span><span style="flex:1;min-width:0"><small>오늘의 집필 · 목표 ${goal.toLocaleString()}자</small><b>${today.toLocaleString()}자</b><span class="meter"><i style="width:${Math.min(100, today / goal * 100)}%"></i></span></span></button>
-      <button class="wg" id="wgMark"><span class="ic sky">${ICON.mark}</span><span><small>북마크</small><b>${bms.length}개</b></span></button>
-      <button class="wg" id="wgTimer"><span class="ic pink">${ICON.clock}</span><span><small>집필 타이머</small><b>${mmss(timeLeft())}</b></span></button>
+    <div class="widgets w3">
+      <button class="wg" id="wgToday"><span class="ic lav">${ICON.pen}</span><span class="wgt"><small>오늘의 집필</small><b>${today.toLocaleString()}자</b><em>${left ? `목표 ${goal.toLocaleString()}자` : '목표 달성 ♡'}</em><span class="meter"><i style="width:${Math.min(100, today / goal * 100)}%"></i></span></span></button>
+      <button class="wg" id="wgMark"><span class="ic sky">${ICON.mark}</span><span class="wgt"><small>북마크</small><b>${bms.length}개</b><em>모아 둔 문단</em></span></button>
+      <button class="wg" id="wgTimer"><span class="ic pink">${ICON.clock}</span><span class="wgt"><small>집필 타이머</small><b>${mmss(timeLeft())}</b><em>${T.running ? '집중하는 중' : '눌러서 시작'}</em></span></button>
     </div>
     </div><div class="h-side">
     <div class="sec-t"><h3>오늘의 기록</h3></div>
-    <div class="banners">
-      <button class="banner streak" id="bStreak"><h4><em>${streak}</em>일 연속 집필!</h4><p>${streak ? '작은 성실이 이야기를 완성해요.' : '오늘 한 문장이면 연속 기록이 시작돼요.'}</p>
-        <div class="days">${week.map((d, i) => `<span class="day ${days.has(dkey(d)) ? 'done' : ''} ${i === 6 ? 'today' : ''}"><i>${days.has(dkey(d)) ? '✓' : ''}</i>${'일월화수목금토'[d.getDay()]}</span>`).join('')}</div>
-        <img class="stk" src="${STK.great}" alt="" width="120" height="122"></button>
-      <button class="banner reread" id="bReread"><h4>오늘의 재독 🎧</h4><p>소리 내어 들으며 문장을 다듬어요.</p><span class="btn brand small">지금 재독하기 →</span>
-        <img class="stk" src="${STK.focus}" alt="" width="124" height="118"></button>
-    </div>
+    <button class="streak2" id="bStreak"><img class="s-art" src="img/streak_art.webp" width="380" height="317" alt="">
+      <h4><em>${streak}일</em> 연속 집필! <span class="spk">✦</span></h4><p>${streak ? '작은 성실이 이야기를 완성해요.' : '오늘 한 문장이면 연속 기록이 시작돼요.'}</p>
+      <div class="days">${week.map((d, i) => `<span class="day ${days.has(dkey(d)) ? 'done' : ''} ${i === 6 ? 'today' : ''}"><i>${days.has(dkey(d)) ? '✓' : ''}</i>${'일월화수목금토'[d.getDay()]}</span>`).join('')}</div></button>
     </div></div>
     <div class="sec-t"><h3>바로 가기</h3></div>
-    <div class="feats">
+    <div class="feats f5">
       <button class="feat" data-f="draft"><span class="ic lav">${ICON.pen}</span>초안 쓰기<small>떠오르는 대로 바로 기록</small></button>
       <button class="feat" data-f="list"><span class="ic pink">${ICON.list}</span>회차 정리<small>작품별·회차별 깔끔하게</small></button>
       <button class="feat" data-f="voice"><span class="ic sky">${ICON.mic}</span>음성 메모<small>말로 남기는 아이디어</small></button>
-      <button class="feat" data-f="listen"><span class="ic lav" style="background:#E8E4FF">${ICON.head}</span>낭독 듣기<small>귀로 재독하며 다듬기</small></button>
+      <button class="feat" data-f="listen"><span class="ic lav2">${ICON.head}</span>낭독 듣기<small>귀로 재독하며 다듬기</small></button>
       <button class="feat" data-f="drive"><span class="ic butter">${ICON.cloud}</span>드라이브 저장<small>구글 드라이브 자동 백업</small></button>
     </div>
     <div class="sec-t"><h3>최근 회차</h3>${all.length ? '<button class="link" id="hAll">작품 보기 →</button>' : ''}</div>
-    <div class="recent">${all.slice(0, 5).map(e => `<button class="rc" data-e="${e.id}"><span class="n">${esc(labelOf(e))}</span><span class="t">${esc(workOf(e)?.title || '')}${e.title ? ' · ' + esc(e.title) : ''}</span><span class="pill s-${e.status || 'draft'}">${STATUS[e.status || 'draft']}</span><span class="m">${counts(e.text).noSp.toLocaleString()}자</span></button>`).join('') ||
+    <div class="recent r2">${all.slice(0, 5).map(e => `<button class="rc" data-e="${e.id}"><span class="di">${ICON.list}</span><span class="n">${esc(labelOf(e))}</span><span class="t">${esc(workOf(e)?.title || '')}${e.title ? ' · ' + esc(e.title) : ''}</span><span class="pill s-${e.status || 'draft'}">${STATUS[e.status || 'draft']}</span><span class="m">${counts(e.text).noSp.toLocaleString()}자</span><span class="chev">›</span></button>`).join('') ||
       `<div class="empty-box card"><img src="${STK.oops}" alt="">아직 회차가 없어요. 「＋ 새 회차 만들기」로 시작해 봐요!</div>`}</div>
+    ${installCardHTML()}
   </div>`;
   const v = $('#vHome');
   v.querySelector('#hContinue').onclick = () => cur ? openEpisode(cur.id) : quickNewEpisode('ChatGPT 초안을 붙여 넣거나 바로 써 보세요 ✍️');
@@ -1226,7 +1223,6 @@ async function renderHome() {
   v.querySelector('#wgMark').onclick = () => { S.vaultTab = 'marks'; showTab('vault'); };
   v.querySelector('#wgTimer').onclick = openTimer;
   v.querySelector('#bStreak').onclick = () => showTab('my');
-  v.querySelector('#bReread').onclick = async () => { if (!cur) return toast('먼저 회차를 하나 써 볼까요?', 3000, 'oops'); await openEpisode(cur.id); openReader(); };
   v.querySelector('#hAll')?.addEventListener('click', () => showTab('works'));
   v.querySelectorAll('.rc[data-e]').forEach(b => b.onclick = () => openEpisode(b.dataset.e));
   v.querySelectorAll('.feat').forEach(b => b.onclick = async () => {
