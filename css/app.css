@@ -513,3 +513,24 @@ body.kb-open .toolbar{display:none}
   .beat textarea,.n-ta{font-size:16px}
   .note-grid{grid-template-columns:1fr}
 }
+/* ---------- 찾기 · 바꾸기 ---------- */
+.paper{position:relative}
+#editor{position:relative;z-index:1}
+.hl-layer{position:absolute;z-index:0;overflow:hidden;color:transparent;pointer-events:none;white-space:pre-wrap;overflow-wrap:break-word;margin:0}
+.hl-layer mark{color:transparent;background:color-mix(in srgb,var(--butter) 85%,transparent);border-radius:3px;box-shadow:0 0 0 1px color-mix(in srgb,var(--butter) 85%,transparent)}
+.hl-layer mark.cur{background:color-mix(in srgb,var(--point) 55%,transparent);box-shadow:0 0 0 2px var(--point)}
+[data-theme=dark] .hl-layer mark{background:rgba(255,231,168,.28)}
+.find-bar{display:flex;flex-direction:column;gap:6px;padding:8px 12px;background:var(--violet);border-bottom:1px solid var(--line)}
+.fb-row{display:flex;gap:6px;align-items:center;max-width:760px;width:100%;margin:0 auto}
+.fb-rep{display:none}.find-bar.rep .fb-rep{display:flex}
+.fb-in{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:0 10px}
+.fb-in:focus-within{border-color:var(--gold)}
+.fb-in input{flex:1;min-width:0;border:0;outline:none;background:transparent;padding:8px 0;font-size:16px;color:var(--ink)}
+#fCount{font-size:.75rem;font-weight:700;color:var(--brand);white-space:nowrap}#fCount.none{color:var(--bad)}
+.find-bar .chip{padding:5px 9px}
+.sr-tools{display:flex;gap:6px;padding:0 6px 6px}
+.sr-rep{display:flex;gap:6px;padding:0 6px 8px}.sr-rep[hidden]{display:none}
+.sr-rep input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:16px;background:var(--card);color:var(--ink)}
+.sr-sec{font-size:.78rem;font-weight:700;color:var(--mute);padding:10px 6px 2px}
+.rp-list{max-height:180px;overflow:auto;background:var(--violet);border-radius:12px;padding:8px 12px;font-size:.85rem;line-height:1.7}
+@media (max-width:600px){.find-bar{padding:6px 8px}.fb-row{gap:4px}.find-bar .icon-btn.sm{width:30px;height:30px}}

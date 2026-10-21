@@ -55,7 +55,7 @@
       <button class="icon-btn" id="btnSettings" title="설정" aria-label="설정">⚙︎</button>
     </header>
     <div class="side-tools">
-      <label class="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="모든 작품에서 검색" autocomplete="off"></label>
+      <label class="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="모든 작품·노트에서 검색" autocomplete="off"></label>
       <div class="row">
         <button class="btn gold" id="btnNewWork">＋ 새 작품</button>
         <button class="btn ghost" id="btnImport" title="TXT 가져오기">TXT 가져오기</button>
@@ -91,6 +91,7 @@
         <button class="tb" id="btnSnap" title="지금 버전 저장"><span>✦</span><b>버전 저장</b></button>
         <button class="tb" id="btnCopy" title="ChatGPT로 가져갈 원고 복사"><span>📋</span><b>복사</b></button>
         <button class="tb" id="btnRevise" title="ChatGPT 수정본 안전하게 반영"><span>✎</span><b>수정본 반영</b></button>
+        <button class="tb" id="btnFind" title="찾기·바꾸기 (Ctrl+F)"><span>🔍</span><b>찾기</b></button>
         <button class="tb" id="btnNote" title="설계 노트에 바로 적기 (원고 자리는 그대로)"><span>💡</span><b>설계</b></button>
         <button class="tb" id="btnMark" title="이 문단 북마크"><span>🔖</span><b>북마크</b></button>
         <button class="tb" id="btnTimerTb" title="집필 타이머"><span>⏱</span><b id="tbTimer">타이머</b></button>
@@ -100,6 +101,14 @@
         <div class="tb-grow"></div>
         <button class="tb small" id="btnFontDown" title="글자 작게" aria-label="글자 작게">가−</button>
         <button class="tb small" id="btnFontUp" title="글자 크게" aria-label="글자 크게">가＋</button>
+      </div>
+      <div id="findBar" class="find-bar" role="search" aria-label="이 회차에서 찾기" hidden>
+        <div class="fb-row"><label class="fb-in"><span aria-hidden="true">🔍</span><input id="fQ" type="search" placeholder="이 회차에서 찾기" autocomplete="off" enterkeyhint="search"><output id="fCount" aria-live="polite"></output></label>
+          <button type="button" class="icon-btn sm" id="fPrev" aria-label="이전">↑</button><button type="button" class="icon-btn sm" id="fNext" aria-label="다음">↓</button>
+          <button type="button" class="chip" id="fCase" aria-pressed="false" title="대소문자 구분">Aa</button><button type="button" class="chip" id="fRepToggle" aria-expanded="false" title="바꾸기">⇄</button>
+          <button type="button" class="icon-btn sm" id="fClose" aria-label="찾기 닫기">✕</button></div>
+        <div class="fb-row fb-rep"><label class="fb-in"><span aria-hidden="true">⇄</span><input id="fRep" placeholder="바꿀 말" autocomplete="off" enterkeyhint="done"></label>
+          <button type="button" class="btn small soft" id="fRepOne">바꾸기</button><button type="button" class="btn small brand" id="fRepAll">모두</button></div>
       </div>
       <div class="ed-body">
         <div class="paper">
