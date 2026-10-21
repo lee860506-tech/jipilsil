@@ -270,7 +270,8 @@ with sync_playwright() as p:
 
     # ---- 드라이브 연결·동기화 (가짜 드라이브) ----
     pg.click('#btnSettings'); pg.wait_for_timeout(300)
-    check('설정: 기본 클라이언트 ID가 칸에 들어 있음', pg.input_value('#setCid').endswith('.apps.googleusercontent.com') and '기본 ID' in pg.inner_text('#setCidNote'))
+    if 'lee860506-tech.github.io' in URL: check('설정: 기본 클라이언트 ID가 칸에 들어 있음 (원본 주소)', pg.input_value('#setCid').endswith('.apps.googleusercontent.com') and '기본 ID' in pg.inner_text('#setCidNote'))
+    else: check('설정: 다른 주소에서는 기본 ID 없이 빈칸 (직접 입력)', pg.input_value('#setCid') == '' and 'ID를 붙여 넣은 뒤' in pg.inner_text('#setCidNote'))
     pg.fill('#setCid', 'abc'); pg.click('#setConnect'); pg.wait_for_timeout(400)
     m1 = pg.inner_text('#setMsg') if pg.is_visible('#setMsg') else ''
     top = pg.evaluate("()=>{const t=document.querySelector('#toast');return t.matches(':popover-open') && !t.hidden}")

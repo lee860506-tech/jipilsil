@@ -1,0 +1,31 @@
+name: release-zip
+# 정적 사이트 ZIP을 만들어 GitHub 릴리스에 올려요 (Actions 탭에서 Run workflow)
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리스 태그 (예: v1.1.0)"
+        required: true
+        default: "v1.1.0"
+permissions:
+  contents: write
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          mkdir -p _site/icons _site/img
+          cp -r index.html config.js manifest.webmanifest sw.js css js README.md DRIVE_SETUP.md LICENSE _site/
+          cp icons/*.svg _site/icons/
+          for f in icons-b64/*.b64; do base64 -d "$f" > "_site/icons/$(basename "$f" .b64)"; done
+          for f in img-b64/*.b64; do base64 -d "$f" > "_site/img/$(basename "$f" .b64)"; done
+          sed -i "s/__BUILD__/${GITHUB_SHA::12}/" _site/sw.js
+          cd _site && zip -qr ../jipilsil-web.zip . && cd .. && ls -la jipilsil-web.zip
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$TAG" jipilsil-web.zip --target "$GITHUB_SHA" --title "집필실 $TAG (웹 · 직접 배포용 ZIP)" --notes "정적 파일 ZIP — 압축을 풀어 GitHub Pages·Netlify 등 아무 정적 호스팅에 올리면 돼요. 사용·배포 안내는 README, 드라이브 연결은 DRIVE_SETUP.md. 안드로이드 APK는 이전 릴리스(원본 주소 전용)에 있어요." --latest=false
