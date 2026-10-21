@@ -20,7 +20,7 @@ const S = {
 };
 window.__yw = S; // 테스트·디버그용
 
-const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', open: '열었을 때' };
+const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', 'before-replace': '바꾸기 전', open: '열었을 때' };
 
 // ================= 공통 UI =================
 let toastT;
@@ -634,34 +634,157 @@ async function resolveUI(id) {
 // ================= 검색 =================
 let srchT;
 $('#searchInput').addEventListener('input', () => { clearTimeout(srchT); srchT = setTimeout(doSearch, 220); });
+S.srCase = false;
 async function doSearch() {
   const q = $('#searchInput').value.trim(); const box = $('#searchResults');
   if (!q) { box.hidden = true; $('#workList').hidden = false; return; }
   await flushSave(); await loadAll();
-  const res = []; const ql = q.toLowerCase();
+  const res = []; let total = 0; const cs = S.srCase;
   for (const w of S.works) for (const [i, e] of (S.eps.get(w.id) || []).entries()) {
-    const hay = [['title', e.title || ''], ['text', e.text || ''], ['memo', e.memo || '']];
-    for (const [k, h] of hay) {
-      let pos = h.toLowerCase().indexOf(ql), n = 0;
-      while (pos >= 0 && n < 3) { res.push({ w, e, i, k, pos, h }); n++; pos = h.toLowerCase().indexOf(ql, pos + ql.length); }
+    for (const [k, h] of [['title', e.title || ''], ['text', e.text || ''], ['memo', e.memo || '']]) {
+      const ps = findIdx(h, q, cs); total += ps.length;
+      for (const pos of ps) if (res.length < 300) res.push({ w, e, i, k, pos, h });
     }
   }
+  const notes = (await db.all('notes')).filter(n => findIdx(searchText(n, noteWorkTitle(n)) + ' ' + [n.title, n.body, n.cite, ...(n.beats || []).map(b => b.text)].join(' '), q, cs).length);
+  const textHits = res.filter(r => r.k === 'text').length;
   box.hidden = false; $('#workList').hidden = true;
-  box.innerHTML = `<div class="sr-head">「${esc(q)}」 ${res.length}곳${res.length >= 200 ? '+' : ''} <button class="btn small ghost" id="srClose">닫기</button></div>` + (res.slice(0, 200).map((r, n) => {
-    const a = Math.max(0, r.pos - 30); const snip = esc(r.h.slice(a, r.pos)) + '<mark>' + esc(r.h.slice(r.pos, r.pos + q.length)) + '</mark>' + esc(r.h.slice(r.pos + q.length, r.pos + q.length + 40));
-    return `<button class="sr" data-n="${n}"><span class="sr-w">${esc(r.w.title)} · ${esc(Drive.episodeLabel(r.e, r.i))}${r.k === 'memo' ? ' · 메모' : r.k === 'title' ? ' · 제목' : ''}</span><span class="sr-s">${a ? '…' : ''}${snip.replace(/\n/g, ' ⏎ ')}</span></button>`;
-  }).join('') || '<p class="mute pad">찾는 글이 없어요.</p>');
+  const repOpen = box.dataset.rep === '1';
+  box.innerHTML = `<div class="sr-head"><span>「${esc(q)}」 <b>${total}곳</b>${notes.length ? ` · 설계 노트 ${notes.length}` : ''}</span><button class="btn small ghost" id="srClose">닫기</button></div>
+    <div class="sr-tools"><button type="button" class="chip ${cs ? 'on' : ''}" id="srCase" aria-pressed="${cs}" title="대소문자 구분">Aa 대소문자</button><button type="button" class="chip ${repOpen ? 'on' : ''}" id="srRepT">⇄ 바꾸기</button></div>
+    <div class="sr-rep" ${repOpen ? '' : 'hidden'}><input id="srRep" placeholder="바꿀 말" value="${esc(S.srRep || '')}" autocomplete="off"><button type="button" class="btn small brand" id="srRepAll" ${textHits ? '' : 'disabled'}>모든 회차에서 바꾸기</button></div>` +
+    (res.map((r, n) => {
+      const a = Math.max(0, r.pos - 30); const snip = esc(r.h.slice(a, r.pos)) + '<mark>' + esc(r.h.slice(r.pos, r.pos + q.length)) + '</mark>' + esc(r.h.slice(r.pos + q.length, r.pos + q.length + 40));
+      return `<button class="sr" data-n="${n}"><span class="sr-w">${esc(r.w.title)} · ${esc(Drive.episodeLabel(r.e, r.i))}${r.k === 'memo' ? ' · 메모' : r.k === 'title' ? ' · 제목' : ''}</span><span class="sr-s">${a ? '…' : ''}${snip.replace(/\n/g, ' ⏎ ')}</span></button>`;
+    }).join('') + (total > res.length ? `<p class="mute small pad">앞의 ${res.length}곳만 보여요</p>` : '') +
+    (notes.length ? `<div class="sr-sec">💡 설계 노트</div>` + notes.slice(0, 50).map(n => `<button class="sr" data-note="${n.id}"><span class="sr-w">${(NTYPE[n.type] || NTYPE.idea).icon} ${esc(noteWorkTitle(n) || '공통')}</span><span class="sr-s">${esc(n.title || '(제목 없음)')}</span></button>`).join('') : '') ||
+    `<div class="empty-box"><img src="${STK.oops}" alt="">찾는 글이 없어요.</div>`);
+  box.querySelector('#srCase').onclick = () => { S.srCase = !S.srCase; doSearch(); };
+  box.querySelector('#srRepT').onclick = () => { box.dataset.rep = repOpen ? '' : '1'; doSearch().then(() => box.querySelector('#srRep')?.focus()); };
+  const ri = box.querySelector('#srRep'); ri.oninput = () => S.srRep = ri.value;
+  box.querySelector('#srRepAll').onclick = () => replaceEverywhere(q, ri.value, S.srCase);
   box.onclick = async ev => {
-    if (ev.target.id === 'srClose') { $('#searchInput').value = ''; return doSearch(); }
+    if (ev.target.id === 'srClose') { $('#searchInput').value = ''; box.dataset.rep = ''; return doSearch(); }
+    const nb = ev.target.closest('[data-note]'); if (nb) return noteEditor(nb.dataset.note);
     const b = ev.target.closest('.sr'); if (!b) return; const r = res[+b.dataset.n];
     await openEpisode(r.e.id);
-    if (r.k === 'text') { ed.focus(); ed.setSelectionRange(r.pos, r.pos + q.length); scrollToCaret(r.pos); }
+    if (r.k === 'text') { FIND.cs = S.srCase; $('#fCase').classList.toggle('on', FIND.cs); openFind(q); FIND.i = Math.max(0, FIND.hits.indexOf(r.pos)); gotoHit(FIND.i); }
     if (r.k === 'memo') showPane('memo');
   };
 }
 function scrollToCaret(pos) { // 대략적인 위치로 스크롤
   const lines = ed.value.slice(0, pos).split('\n').length; const total = ed.value.split('\n').length || 1;
   ed.scrollTop = Math.max(0, (ed.scrollHeight * (lines / total)) - ed.clientHeight / 3);
+}
+
+// ================= 찾기 · 바꾸기 =================
+// 원칙: 원고는 언제나 편집기 → 평소 저장(flushSave) 경로로만 바뀜. 모두 바꾸기 전에는 수정 기록을 남기고, 되돌리기 제공.
+const FIND = { q: '', rep: '', cs: false, hits: [], i: -1 };
+const findIdx = (h, q, cs) => { const out = []; if (!q) return out; const H = cs ? h : h.toLowerCase(), Q = cs ? q : q.toLowerCase(); let p = H.indexOf(Q); while (p >= 0) { out.push(p); p = H.indexOf(Q, p + Q.length); } return out; };
+const hl = document.createElement('div'); hl.className = 'hl-layer'; hl.setAttribute('aria-hidden', 'true'); ed.parentNode.insertBefore(hl, ed);
+const HL_PROPS = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderLeftWidth', 'borderRightWidth', 'borderBottomWidth', 'boxSizing', 'textIndent', 'tabSize', 'whiteSpace', 'overflowWrap', 'wordBreak', 'textAlign'];
+function drawHL() {
+  if ($('#findBar').hidden || !FIND.q || ed.hidden) { hl.hidden = true; hl.innerHTML = ''; return; }
+  const cs = getComputedStyle(ed); for (const k of HL_PROPS) hl.style[k] = cs[k];
+  hl.style.left = ed.offsetLeft + 'px'; hl.style.top = ed.offsetTop + 'px'; hl.style.width = ed.clientWidth + 'px'; hl.style.height = ed.clientHeight + 'px';
+  hl.style.borderColor = 'transparent'; hl.style.borderStyle = 'solid';
+  const v = ed.value, L = FIND.q.length; let out = '', last = 0;
+  FIND.hits.forEach((p, k) => { out += esc(v.slice(last, p)) + `<mark class="${k === FIND.i ? 'cur' : ''}">${esc(v.slice(p, p + L))}</mark>`; last = p + L; });
+  hl.innerHTML = out + esc(v.slice(last)) + '\n'; hl.hidden = false; hl.scrollTop = ed.scrollTop;
+}
+ed.addEventListener('scroll', () => { if (!hl.hidden) hl.scrollTop = ed.scrollTop; });
+function refind(keepNear) {
+  FIND.hits = findIdx(ed.value, FIND.q, FIND.cs);
+  if (!FIND.hits.length) FIND.i = -1;
+  else if (keepNear != null) { const k = FIND.hits.findIndex(p => p >= keepNear); FIND.i = k < 0 ? 0 : k; }
+  else if (FIND.i >= FIND.hits.length) FIND.i = FIND.hits.length - 1;
+  $('#fCount').textContent = FIND.q ? (FIND.hits.length ? `${FIND.i + 1}/${FIND.hits.length}` : '0개') : '';
+  $('#fCount').classList.toggle('none', !!FIND.q && !FIND.hits.length);
+  drawHL();
+}
+function gotoHit(k, { select = true } = {}) {
+  if (!FIND.hits.length) return; FIND.i = (k + FIND.hits.length) % FIND.hits.length; refind();
+  const p = FIND.hits[FIND.i];
+  if (select) { ed.focus({ preventScroll: true }); ed.setSelectionRange(p, p + FIND.q.length); }
+  const m = hl.querySelector('mark.cur'); if (m) { ed.scrollTop = Math.max(0, m.offsetTop - ed.clientHeight / 3); hl.scrollTop = ed.scrollTop; } else scrollToCaret(p);
+}
+function openFind(q) {
+  const bar = $('#findBar'); bar.hidden = false; $('#btnFind').classList.add('on');
+  const sel = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+  if (q != null) $('#fQ').value = q; else if (sel && sel.length < 80 && !sel.includes('\n')) $('#fQ').value = sel;
+  FIND.q = $('#fQ').value; refind(ed.selectionStart); $('#fQ').focus(); $('#fQ').select();
+}
+function closeFind() { $('#findBar').hidden = true; $('#btnFind').classList.remove('on'); hl.hidden = true; hl.innerHTML = ''; }
+$('#btnFind').onclick = () => $('#findBar').hidden ? openFind() : closeFind();
+$('#fClose').onclick = () => { closeFind(); ed.focus({ preventScroll: true }); };
+let fT; $('#fQ').addEventListener('input', e => { clearTimeout(fT); fT = setTimeout(() => { FIND.q = e.target.value; refind(ed.selectionStart); if (FIND.hits.length) gotoHit(FIND.i, { select: false }); }, 120); });
+$('#fQ').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); FIND.q = $('#fQ').value; refind(); gotoHit(FIND.i + (e.shiftKey ? -1 : 1) - (FIND.i < 0 ? 0 : 0)); } if (e.key === 'Escape') closeFind(); });
+$('#fRep').addEventListener('input', e => FIND.rep = e.target.value);
+$('#fRep').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); replaceOne(); } if (e.key === 'Escape') closeFind(); });
+$('#fPrev').onclick = () => { FIND.q = $('#fQ').value; refind(); gotoHit(FIND.i - 1); };
+$('#fNext').onclick = () => { FIND.q = $('#fQ').value; refind(); gotoHit(FIND.i + 1); };
+$('#fCase').onclick = () => { FIND.cs = !FIND.cs; $('#fCase').classList.toggle('on', FIND.cs); $('#fCase').setAttribute('aria-pressed', FIND.cs); refind(ed.selectionStart); };
+$('#fRepToggle').onclick = () => { const r = $('#findBar').classList.toggle('rep'); $('#fRepToggle').setAttribute('aria-expanded', r); if (r) $('#fRep').focus(); };
+function editorReplace(from, to, text) { S.pasteChars += Math.max(0, [...text].length - (to - from)); ed.setRangeText(text, from, to, 'end'); ed.dispatchEvent(new Event('input')); }
+function replaceOne() {
+  FIND.q = $('#fQ').value; refind(); if (!FIND.hits.length || !S.cur) return;
+  const p = FIND.hits[Math.max(0, FIND.i)]; const rep = $('#fRep').value;
+  editorReplace(p, p + FIND.q.length, rep); refind(p + rep.length);
+  if (FIND.hits.length) gotoHit(FIND.i); toast(FIND.hits.length ? `1곳을 바꿨어요 · 남은 ${FIND.hits.length}곳` : '1곳을 바꿨어요 · 모두 바꿨어요', 1800);
+}
+async function replaceAllHere() {
+  FIND.q = $('#fQ').value; refind(); const n = FIND.hits.length; const ep = S.cur && findEp(S.cur); if (!n || !ep) return;
+  const rep = $('#fRep').value; const before = ed.value;
+  await flushSave(); await snapshot({ ...(await db.get('episodes', ep.id)), text: before }, 'before-replace', `「${FIND.q}」→「${rep}」 ${n}곳`);
+  let out = '', last = 0; for (const p of FIND.hits) { out += before.slice(last, p) + rep; last = p + FIND.q.length; } out += before.slice(last);
+  const st = ed.scrollTop; editorReplace(0, before.length, out); ed.setSelectionRange(0, 0); ed.scrollTop = st; await flushSave(); refind();
+  toast(`${n}곳을 바꿨어요 (바꾸기 전 원고는 수정 기록에 있어요)`, 7000, 'great', { label: '되돌리기', fn: async () => {
+    if (S.cur !== ep.id) await openEpisode(ep.id);
+    if (ed.value !== out) { toast('그 뒤로 원고가 바뀌어서 수정 기록에서 복원해 주세요', 4000, 'oops'); return showPane('hist'); }
+    editorReplace(0, out.length, before); ed.scrollTop = st; await flushSave(); refind(); toast('바꾸기 전으로 되돌렸어요');
+  } });
+}
+$('#fRepOne').onclick = replaceOne; $('#fRepAll').onclick = replaceAllHere;
+ed.addEventListener('input', () => { if (!$('#findBar').hidden && FIND.q) { clearTimeout(fT); fT = setTimeout(() => refind(), 150); } });
+window.addEventListener('resize', () => { if (!hl.hidden) drawHL(); });
+document.addEventListener('keydown', e => {
+  if (S.tab !== 'note' || $('#editorView').hidden || $('#dlg').open) return;
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && (k === 'f' || k === 'h')) { e.preventDefault(); openFind(); if (k === 'h' && !$('#findBar').classList.contains('rep')) $('#fRepToggle').click(); }
+  else if (e.key === 'F3') { e.preventDefault(); e.shiftKey ? $('#fPrev').click() : $('#fNext').click(); }
+});
+
+// ---------- 모든 작품에서 바꾸기 (사이드 검색) ----------
+async function replaceEverywhere(q, rep, cs) {
+  await flushSave(); await loadAll();
+  const targets = [];
+  for (const w of S.works) for (const [i, e] of (S.eps.get(w.id) || []).entries()) { if (e.conflict) continue; const n = findIdx(e.text || '', q, cs).length; if (n) targets.push({ w, e, i, n }); }
+  const skipped = [...S.eps.values()].flat().filter(e => e.conflict && findIdx(e.text || '', q, cs).length).length;
+  const total = targets.reduce((a, t) => a + t.n, 0); if (!total) return toast('바꿀 곳이 없어요');
+  const ok = await dialog({ title: '모든 회차에서 바꾸기', html: `<p>「<b>${esc(q)}</b>」 → 「<b>${esc(rep)}</b>」${cs ? ' (대소문자 구분)' : ''}</p>
+    <p><b>${targets.length}개 회차 · ${total}곳</b>을 바꿀까요? 회차마다 바꾸기 전 원고를 <b>수정 기록</b>에 남기고, 끝나면 「되돌리기」도 할 수 있어요.</p>
+    <div class="rp-list">${targets.slice(0, 30).map(t => `<div>${esc(t.w.title)} · ${esc(Drive.episodeLabel(t.e, t.i))} <b>${t.n}곳</b></div>`).join('')}${targets.length > 30 ? `<div class="mute">… 외 ${targets.length - 30}개 회차</div>` : ''}</div>
+    ${skipped ? `<p class="small mute">⚠ 충돌을 고르는 중인 회차 ${skipped}개는 건너뛰어요.</p>` : ''}<p class="small mute">회차 본문만 바꿔요 (제목·메모·설계 노트는 그대로).</p>`,
+    buttons: [{ label: '취소', value: 'cancel' }, { label: `${total}곳 모두 바꾸기`, value: 'ok', cls: 'brand' }] });
+  if (ok !== 'ok') return;
+  const done = [];
+  for (const t of targets) {
+    const cur = await db.get('episodes', t.e.id); if (!cur || cur.conflict) continue;
+    const pos = findIdx(cur.text || '', q, cs); if (!pos.length) continue;
+    let out = '', last = 0; for (const p of pos) { out += cur.text.slice(last, p) + rep; last = p + q.length; } out += cur.text.slice(last);
+    await snapshot(cur, 'before-replace', `「${q}」→「${rep}」 ${pos.length}곳`);
+    const u = await db.update('episodes', cur.id, c => c && c.text === cur.text ? (c.text = out, c.rev = (c.rev || 0) + 1, c.dirty = true, c.updatedAt = Date.now(), c) : undefined);
+    if (u) { done.push({ id: cur.id, before: cur.text, after: out, n: pos.length }); if (S.cur === cur.id) { const st = ed.scrollTop; ed.value = out; ed.scrollTop = st; updateCounts(); } }
+  }
+  await loadAll(); renderSide(); scheduleSync(1500); if (!$('#findBar').hidden) refind();
+  const n = done.reduce((a, d) => a + d.n, 0);
+  toast(`${done.length}개 회차 · ${n}곳을 바꿨어요`, 8000, 'great', { label: '되돌리기', fn: async () => {
+    await flushSave(); let back = 0, miss = 0;
+    for (const d of done) { const u = await db.update('episodes', d.id, c => c && c.text === d.after ? (c.text = d.before, c.rev = (c.rev || 0) + 1, c.dirty = true, c.updatedAt = Date.now(), c) : undefined); if (u) { back++; if (S.cur === d.id) { ed.value = d.before; updateCounts(); } } else miss++; }
+    await loadAll(); renderSide(); scheduleSync(1500); if (!$('#searchResults').hidden) doSearch();
+    toast(miss ? `${back}개 회차를 되돌렸어요 · ${miss}개는 그 뒤로 바뀌어서 수정 기록에서 복원해 주세요` : `${back}개 회차를 바꾸기 전으로 되돌렸어요`, 5000);
+  } });
+  if (!$('#searchResults').hidden) doSearch();
 }
 
 // ================= 오디오: 받아쓰기 =================
