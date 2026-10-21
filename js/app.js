@@ -150,7 +150,7 @@ function runSync(why) {
 }
 async function runSyncOnce(why) {
   if (!navigator.onLine) { S.syncState = 'offline'; updateStatus(); return; }
-  if (!Drive.hasValidToken()) { S.syncState = (await Drive.wasConnected()) ? 'needauth' : 'idle'; updateStatus(); return; }
+  if (!Drive.hasValidToken()) { S.syncState = (await Drive.wasConnected()) ? 'needauth' : 'idle'; updateStatus(); if (S.syncState === 'needauth' && why !== 'open') authNag(); return; }
   await flushSave();
   try { await Drive.sync(why); }
   catch (e) {
@@ -201,6 +201,7 @@ Drive.setHooks({
   snapshot: (ep, reason, label) => snapshot(ep, reason, label),
   onStatus: s => { S.syncState = s; updateStatus(); },
   onChange: async ch => {
+    if (ch.settings) { S.settings = { ...S.settings, ...((await db.kv.get('settings')) || {}) }; applySettings(); if (!['note'].includes(S.tab)) rerenderTab(); return; }
     if (ch.notes) { if (ch.copies) toast(`설계 노트 ${ch.copies}개가 두 기기에서 따로 바뀌어서, 드라이브 버전을 「(다른 기기 버전)」 사본으로 함께 남겼어요`, 6000, 'oops'); if (S.tab === 'vault' && S.vaultTab === 'notes' && !$('#dlg').open) renderVault(); if (!$('#panel').hidden && paneTab === 'notes') renderPaneNotes(); return; }
     if (ch.conflictCleared && ch.episode === S.cur) { refreshConflictBanner(); updateStatus(); }
     if (ch.episode && ch.episode === S.cur && ch.textChanged) {
@@ -229,6 +230,24 @@ $('#btnStatusAct').addEventListener('click', e => {
   else if (a === 'resolve' && S.cur) resolveUI(S.cur);
 });
 // 클릭 안에서 바로 로그인 창 열기 (팝업 차단 방지)
+// ---------- 자동 재연결: 로그인(1시간)이 끝나기 전, 다음 터치 때 조용히 새로 받기 ----------
+// 구글 토큰은 팝업으로만 새로 받을 수 있고, 팝업은 사용자의 터치 안에서만 열려요 → 아무 곳이나 누를 때(원고 입력칸 제외) 미리 갱신
+let reauthAt = 0, reauthFails = 0;
+document.addEventListener('pointerdown', e => {
+  if (!navigator.onLine || !S.clientId || !Drive.gisReady() || $('#dlg').open) return;
+  if (e.target.closest?.('#editor,#fQ,#fRep,input,textarea,select')) return;
+  if (!Drive.isLinkedSync() || Drive.tokenLeft() > 10 * 60_000) return;
+  if (Date.now() - reauthAt < (reauthFails ? Math.min(30, 2 ** reauthFails) * 60_000 : 60_000)) return;
+  reauthAt = Date.now();
+  Drive.connectNow(S.clientId, { silent: true }).then(() => { reauthFails = 0; S.syncState = 'idle'; updateStatus(); runSync('reauth'); })
+    .catch(() => { reauthFails++; if (!Drive.hasValidToken()) authNag(true); });
+}, true);
+let nagAt = 0;
+async function authNag(force) { // 정말 다시 로그인해야 할 때만, 눈에 띄게 한 번
+  if (!force && Date.now() - nagAt < 15 * 60_000) return; nagAt = Date.now();
+  const n = await pendingCount();
+  toast(`드라이브 로그인이 끝났어요${n ? ` · 올릴 것 ${n}건 대기 중` : ''}. 누르면 바로 이어져요 (원고는 기기에 안전해요)`, 12000, 'oops', { label: '다시 연결', fn: reconnect });
+}
 function reconnect() {
   Drive.connectNow(S.clientId, { silent: true })
     .catch(async er => { if (!er.notReady) throw er; await Drive.loadGIS(); return Drive.connectNow(S.clientId, { silent: true }); })
@@ -384,7 +403,7 @@ ed.addEventListener('paste', async e => {
 });
 // 탭 키는 들여쓰기 대신 전각 공백 (소설 문단 들여쓰기용)
 ed.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); manualSnap(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.shiftKey ? manualSnap() : saveNow(); }
   if (e.key === 'Escape' && document.body.classList.contains('focus')) toggleFocus();
 });
 
@@ -395,7 +414,7 @@ function applySettings() {
   r.dataset.font = st.font;
   document.querySelector('meta[name=theme-color]').content = st.theme === 'dark' ? '#14132A' : st.theme === 'sepia' ? '#F4EEE2' : '#F7F5FF';
 }
-async function saveSettings() { await db.kv.set('settings', S.settings); applySettings(); }
+async function saveSettings(local) { await db.kv.set('settings', S.settings); if (!local) { await db.kv.set('settingsAt', Date.now()); scheduleSync(4000); } applySettings(); }
 $('#btnFontUp').onclick = () => { S.settings.fontSize = Math.min(30, S.settings.fontSize + 1); saveSettings(); toast(`글자 크기 ${S.settings.fontSize}`); };
 $('#btnFontDown').onclick = () => { S.settings.fontSize = Math.max(13, S.settings.fontSize - 1); saveSettings(); toast(`글자 크기 ${S.settings.fontSize}`); };
 function toggleFocus() { document.body.classList.toggle('focus'); $('#btnFocus').classList.toggle('on', document.body.classList.contains('focus')); if (document.body.classList.contains('focus')) toast('집중 모드 · Esc 또는 ◐ 버튼으로 나가기'); }
@@ -442,6 +461,32 @@ async function manualSnap() {
   await snapshot(ep, 'manual', label); toast('✦ 버전을 저장했어요'); if (!$('#panel').hidden && paneTab === 'hist') renderHist();
 }
 $('#btnSnap').onclick = manualSnap;
+// 💾 지금 저장: 기기에 바로 저장 + 드라이브에 바로 올리기 (자동 저장을 기다리지 않음)
+const saveLbl = (t, cls) => { const b = $('#btnSave'); b.className = 'tb save-btn ' + (cls || ''); b.querySelector('b').textContent = t; };
+let saveBusy = false;
+async function saveNow() {
+  if (!S.cur || saveBusy) return;
+  // 로그인이 끝났으면 이 클릭 안에서 바로 재연결 창 (팝업 차단 방지 — await 전에)
+  const linked = Drive.isLinkedSync();
+  let reauth = null;
+  if (linked && navigator.onLine && !Drive.hasValidToken() && Drive.gisReady() && S.clientId) reauth = Drive.connectNow(S.clientId, { silent: true }).catch(() => null);
+  saveBusy = true; saveLbl('저장 중…', 'busy');
+  try {
+    S.pending = true; await flushSave();
+    const hm = () => { const d = new Date(); return `${d.getHours()}:${pad2(d.getMinutes())}`; };
+    if (!linked) { saveLbl(`기기 저장 ${hm()}`, 'ok'); toast('💾 이 기기에 저장했어요 (드라이브는 연결 전)', 2200); return; }
+    if (!navigator.onLine) { saveLbl('기기 저장 · 오프라인', 'warn'); toast('💾 기기에 저장했어요. 인터넷이 돌아오면 드라이브에 자동으로 올려요', 3500); return; }
+    if (reauth) await reauth;
+    if (!Drive.hasValidToken()) { saveLbl('기기 저장 · 다시 연결', 'warn'); authNag(true); return; }
+    await runSync('manual'); if (S.syncP) await S.syncP;
+    const ep = await db.get('episodes', S.cur);
+    if (ep?.conflict) { saveLbl('기기 저장 · 비교 필요', 'warn'); toast('💾 기기에 저장했어요. 다른 기기 내용과 달라서 비교해 골라 주세요', 4000, 'oops'); }
+    else if (S.syncState === 'error' || ep?.dirty) { saveLbl('기기 저장 · 드라이브 실패', 'warn'); toast('💾 기기에는 저장했어요. 드라이브는 잠시 뒤 다시 시도할게요', 3500, 'oops'); }
+    else { saveLbl(`저장됨 ${hm()}`, 'ok'); toast('💾 기기와 드라이브에 저장했어요', 1800, 'great'); }
+  } finally { saveBusy = false; }
+}
+$('#btnSave').addEventListener('click', saveNow);
+ed.addEventListener('input', () => { const b = $('#btnSave'); if (b && !saveBusy && !b.classList.contains('dirty')) saveLbl('저장', 'dirty'); });
 
 // ================= ChatGPT로 가져가기 (클립보드 복사) =================
 function copyText(text) {
@@ -1640,7 +1685,7 @@ async function boot() {
   showSplash();
   S.open = new Set((await db.kv.get('openWorks')) || []);
   await Drive.init(); S.clientId = await Drive.getClientId(); await loadAll();
-  if (S.settings.penName === undefined) { S.settings.penName = S.works.length ? (window.YW_CONFIG?.LEGACY_PEN_NAME || '') : ''; await saveSettings(); } // 예전부터 쓰던 기기는 필명 유지
+  if (S.settings.penName === undefined) { S.settings.penName = S.works.length ? (window.YW_CONFIG?.LEGACY_PEN_NAME || '') : ''; await saveSettings(true); } // 예전부터 쓰던 기기는 필명 유지
   renderSide(); updateStatus(); renderSide(); updateStatus();
   setTimeout(() => { if (navigator.onLine) Drive.prepare().catch(() => {}); }, 2500);
   const last = await db.kv.get('lastEp');

@@ -30,6 +30,8 @@ export async function init() {
   token = (await db.kv.get('driveToken')) || null;
 }
 export const hasValidToken = () => !!(token && token.exp > Date.now() + 60_000);
+export const tokenLeft = () => token ? token.exp - Date.now() : 0;
+export const isLinkedSync = () => !!linkedCache;
 export async function wasConnected() { return !!(await db.kv.get('driveLinked')); }
 
 let linkedCache = null;
@@ -91,7 +93,7 @@ export async function connect(opts = {}) {
 export async function disconnect() {
   try { if (token && window.google?.accounts?.oauth2) window.google.accounts.oauth2.revoke(token.access_token, () => {}); } catch (e) {}
   token = null;
-  await db.kv.set('driveToken', null); await db.kv.set('driveLinked', false); await db.kv.set('driveRootId', null);
+  await db.kv.set('driveToken', null); await db.kv.set('driveLinked', false); await db.kv.set('driveRootId', null); linkedCache = false;
 }
 
 async function api(url, opt = {}) {
@@ -450,7 +452,9 @@ export async function resolveConflict(epId, choice, makeCopy) {
   return ep;
 }
 
-// ---------- 설계 노트 ----------
+// ---------- 설계 노트 (+ 기기끼리 맞출 설정) ----------
+const SET_KEYS = ['penName', 'goal', 'theme', 'font', 'lineH', 'fontSize', 'focusMin', 'breakMin', 'snapMin', 'tidy'];
+const pickSet = o => Object.fromEntries(SET_KEYS.filter(k => k in o).map(k => [k, o[k]]));
 async function syncNotes(rootId) {
   const st = (await db.kv.get('notesSync')) || {};
   const localDel = (await db.kv.get('noteDel')) || {};
@@ -464,7 +468,8 @@ async function syncNotes(rootId) {
     const found = await listAll(`${prop('ywKind', 'notes')} and trashed=false`);
     if (found[0]) { fileId = found[0].id; const f = await api(`${API}/files/${fileId}?fields=id,version`).then(j); ver = f.version; }
   }
-  if (!fileId && !local.length && !Object.keys(localDel).length) return;
+  const lset = await db.kv.get('settings') || {}; const lsetAt = (await db.kv.get('settingsAt')) || 0;
+  if (!fileId && !local.length && !Object.keys(localDel).length && !lsetAt) return;
   let remote = { notes: [], deleted: {} };
   const known = fileId && st.fileId === fileId && st.version === ver; // 마지막으로 내가 올린(받은) 그대로면 받지 않음
   if (fileId && !known) {
@@ -479,10 +484,16 @@ async function syncNotes(rootId) {
   for (const n of m.put) await db.update('notes', n.id, c => (c && c.dirty && c.updatedAt !== (local.find(x => x.id === n.id)?.updatedAt)) ? undefined : n); // 받는 사이 고친 건 건드리지 않음
   for (const id of m.del) await db.del('notes', id);
   if (m.put.length || m.del.length) hooks.onChange({ notes: true, copies: m.copies });
-  if (!m.changed && fileId) { await db.kv.set('notesSync', { fileId, version: ver, deleted: m.deleted }); await clearDel(localDel); return; }
+  // 설정(필명·하루 목표·테마 등): 나중에 바꾼 쪽이 이김
+  let setAt = st.settingsAt || 0;
+  if (!known && remote.settings?.at > lsetAt) { const merged = { ...lset }; for (const k of SET_KEYS) if (k in remote.settings.data) merged[k] = remote.settings.data[k]; await db.kv.set('settings', merged); await db.kv.set('settingsAt', remote.settings.at); setAt = remote.settings.at; hooks.onChange({ settings: true }); }
+  else if (!known && remote.settings?.at) setAt = Math.max(setAt, remote.settings.at);
+  const curSetAt = (await db.kv.get('settingsAt')) || 0;
+  if (curSetAt > setAt) m.changed = true;
+  if (!m.changed && fileId) { await db.kv.set('notesSync', { fileId, version: ver, deleted: m.deleted, settingsAt: setAt }); await clearDel(localDel); return; }
   local = await db.all('notes');
   const sent = new Map(local.map(n => [n.id, n.updatedAt]));
-  const body = JSON.stringify({ v: 1, app: 'jipilsil', savedAt: new Date().toISOString(), notes: local.map(contentOfId), deleted: m.deleted }, null, 1);
+  const body = JSON.stringify({ v: 1, app: 'jipilsil', savedAt: new Date().toISOString(), notes: local.map(contentOfId), deleted: m.deleted, settings: curSetAt ? { at: curSetAt, data: pickSet(await db.kv.get('settings') || {}) } : (remote.settings || undefined) }, null, 1);
   // 올리기 직전 다시 확인: 그 사이 다른 기기가 올렸으면 다음 동기화에서 다시 합침
   if (fileId) { const f = await api(`${API}/files/${fileId}?fields=version`).then(j); if (f.version !== ver) { await db.kv.set('notesSync', { ...st, fileId, version: null }); return; } }
   let res;
@@ -490,7 +501,7 @@ async function syncNotes(rootId) {
   else { const mp = multipart({ name: '설계 노트.json', mimeType: 'application/json', parents: [rootId], appProperties: { ywKind: 'notes' }, description: '집필실 설계 노트(소스·아이디어·시퀀스) 백업 · 앱에서 고쳐 주세요' }, body, 'application/json'); res = await api(`${UP}/files?uploadType=multipart&fields=id,version`, { method: 'POST', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j); }
   if (!res.version) { try { res.version = (await api(`${API}/files/${res.id}?fields=version`).then(j)).version; } catch (e) { if (e instanceof NeedAuth) throw e; } }
   for (const n of local) await db.update('notes', n.id, c => c && c.updatedAt === sent.get(n.id) ? (c.dirty = false, c.base = contentKey(c), c) : undefined);
-  await db.kv.set('notesSync', { fileId: res.id, version: res.version, deleted: m.deleted });
+  await db.kv.set('notesSync', { fileId: res.id, version: res.version, deleted: m.deleted, settingsAt: Math.max(curSetAt, setAt) });
   await clearDel(localDel);
   hooks.onChange({ notes: true });
 }
