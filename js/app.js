@@ -7,6 +7,8 @@ import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, de
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
 import { NTYPE, noteToText, searchText } from './notes.js';
 
+const REPO = window.YW_CONFIG?.REPO || 'lee860506-tech/jipilsil';
+const penLabel = () => (S.settings.penName || '').trim() ? S.settings.penName.trim() + ' 작가님' : '작가님';
 const S = {
   works: [], eps: new Map(),   // workId -> episodes (정렬됨)
   cur: null,                   // 현재 회차 id
@@ -830,14 +832,15 @@ async function openSettings() {
   const st = S.settings;
   const r = await dialog({ title: '설정', wide: true, html: `
     <section class="set"><h4>☁ 구글 드라이브</h4>
-      <p class="mute small">원고는 <b>이 기기</b>와 <b>아라 님 드라이브</b>에만 저장돼요. 앱 권한은 「이 앱이 만든 파일만」(drive.file)이라 다른 드라이브 파일은 볼 수 없어요. 드라이브에는 「${esc(window.YW_CONFIG?.DRIVE_ROOT_NAME || '집필실')}/작품/01화」 구글 문서로, 목록표·인물표는 구글 시트로, 사진은 「아이디어 사진」 폴더에 저장돼요.</p>
+      <p class="mute small">원고는 <b>이 기기</b>와 <b>내 구글 드라이브</b>에만 저장돼요. 앱 권한은 「이 앱이 만든 파일만」(drive.file)이라 다른 드라이브 파일은 볼 수 없어요. 드라이브에는 「${esc(window.YW_CONFIG?.DRIVE_ROOT_NAME || '집필실')}/작품/01화」 구글 문서로, 목록표·인물표는 구글 시트로, 사진은 「아이디어 사진」 폴더에 저장돼요.</p>
       <label class="fld">OAuth 클라이언트 ID <input id="setCid" value="${esc(cid || def)}" placeholder="1234…apps.googleusercontent.com" autocomplete="off" spellcheck="false" inputmode="url"></label>
       <p class="small mute" id="setCidNote">${def && (!cid || cid === def) ? '✓ 기본 ID가 들어 있어요. 그대로 「구글 드라이브 연결」을 누르면 돼요.' : cid ? '이 기기에 직접 넣은 ID를 쓰고 있어요.' : 'ID를 붙여 넣은 뒤 연결을 눌러 주세요.'}</p>
-      <p class="small"><a href="https://github.com/lee860506-tech/jipilsil/blob/main/DRIVE_SETUP.md" target="_blank" rel="noopener">클라이언트 ID 만드는 방법 (10분)</a></p>
+      <p class="small"><a href="https://github.com/${esc(REPO)}/blob/main/DRIVE_SETUP.md" target="_blank" rel="noopener">클라이언트 ID 만드는 방법 (10분)</a></p>
       <div class="row">${linked ? `<button type="button" class="btn gold" id="setConnect">${Drive.hasValidToken() ? '✓ 연결됨 · 다시 연결' : '다시 연결'}</button><button type="button" class="btn" id="setSync">지금 동기화</button><button type="button" class="btn danger" id="setDisc">연결 끊기</button>` : `<button type="button" class="btn gold" id="setConnect">구글 드라이브 연결</button>`}</div>
       <div class="set-msg" id="setMsg" role="status" aria-live="polite" hidden></div>
     </section>
     <section class="set"><h4>✒ 집필 화면</h4>
+      <label class="fld">필명 (인사말에 쓰여요 · 비워도 돼요)<input id="setPen" value="${esc(st.penName || '')}" placeholder="예: 필명" maxlength="20"></label>
       <div class="row wrap"><label class="fld">테마 <select id="setTheme"><option value="light">라벤더 (밝게)</option><option value="dark">밤 (어둡게)</option><option value="sepia">세피아</option></select></label>
       <label class="fld">본문 글꼴 <select id="setFont"><option value="serif">고운바탕 (명조)</option><option value="sans">프리텐다드 (고딕)</option></select></label>
       <label class="fld">줄 간격 <select id="setLh"><option>1.6</option><option>1.8</option><option>1.9</option><option>2.1</option><option>2.4</option></select></label>
@@ -874,7 +877,7 @@ async function openSettings() {
   if (r === 'ok') {
     const f = $('#dlgForm');
     { const v = f.querySelector('#setCid')?.value.trim() || def; S.clientId = v; await db.kv.set('clientId', v === def ? '' : v); }
-    Object.assign(st, { theme: f.querySelector('#setTheme').value, font: f.querySelector('#setFont').value, lineH: +f.querySelector('#setLh').value, snapMin: +f.querySelector('#setSnap').value, tidy: f.querySelector('#setTidy').checked });
+    Object.assign(st, { penName: f.querySelector('#setPen').value.trim(), theme: f.querySelector('#setTheme').value, font: f.querySelector('#setFont').value, lineH: +f.querySelector('#setLh').value, snapMin: +f.querySelector('#setSnap').value, tidy: f.querySelector('#setTidy').checked });
     saveSettings(); toast('설정을 저장했어요');
   }
 }
@@ -1056,7 +1059,7 @@ async function renderHome() {
   const week = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - 6 + i); return d; });
   const hr = new Date().getHours(); const hi = hr < 6 ? '깊은 밤에도 반가워요' : hr < 12 ? '좋은 아침이에요' : hr < 18 ? '좋은 오후예요' : '오늘 밤도 함께해요';
   $('#vHome').innerHTML = `<div class="wrap">
-    <div class="hello"><div><h2>${hi}, 연월 작가님 ♡</h2><p>초안부터 재독까지, 나만의 창작 메이트</p></div><img src="icons/logo.svg" width="46" height="46" alt=""></div>
+    <div class="hello"><div><h2>${hi}, ${esc(penLabel())} ♡</h2><p>초안부터 재독까지, 나만의 창작 메이트</p></div><img src="icons/logo.svg" width="46" height="46" alt=""></div>
     <div class="h-top"><div class="h-main">
     <section class="hero">
       <span class="spark" style="left:52%;top:14px">✦</span><span class="spark" style="left:44%;bottom:22px;animation-delay:.8s;color:#FFB5D0">✦</span><span class="spark" style="left:62%;top:46%;animation-delay:1.4s;color:#A9D6FF">✦</span>
@@ -1163,7 +1166,7 @@ function renderWorks() {
     const cast = w.cast || [];
     pane.innerHTML = `<div class="tbl-tools"><button class="btn brand small" id="cAdd">＋ 인물·설정 추가</button><button class="btn ghost small" id="cCsv">인물·설정표 CSV</button></div>
     <div class="tbl-wrap"><table class="tbl" style="min-width:560px"><thead><tr><th class="nosort" style="width:22%">이름</th><th class="nosort" style="width:24%">관계</th><th class="nosort">메모</th><th class="nosort" style="width:44px"></th></tr></thead>
-    <tbody>${cast.map((r, i) => `<tr data-i="${i}"><td><input data-c="name" value="${esc(r.name)}" placeholder="이름"></td><td><input data-c="rel" value="${esc(r.rel)}" placeholder="관계 (예: 수혁의 형)"></td><td><textarea data-c="memo" rows="1" placeholder="성격·말투·떡밥">${esc(r.memo)}</textarea></td><td><button class="icon-btn sm" data-del aria-label="행 삭제">✕</button></td></tr>`).join('') ||
+    <tbody>${cast.map((r, i) => `<tr data-i="${i}"><td><input data-c="name" value="${esc(r.name)}" placeholder="이름"></td><td><input data-c="rel" value="${esc(r.rel)}" placeholder="관계 (예: 주인공의 소꿉친구)"></td><td><textarea data-c="memo" rows="1" placeholder="성격·말투·떡밥">${esc(r.memo)}</textarea></td><td><button class="icon-btn sm" data-del aria-label="행 삭제">✕</button></td></tr>`).join('') ||
       `<tr><td colspan="4" class="mute" style="text-align:center;padding:20px">인물이나 설정을 추가해 보세요 — 이름 / 관계 / 메모</td></tr>`}</tbody></table></div>`;
     const saveCast = async next => { await db.update('works', w.id, c => c && (c.cast = next, c.dirty = true, c.updatedAt = Date.now(), c)); w.cast = next; scheduleSync(); };
     pane.querySelector('#cAdd').onclick = async () => { await saveCast([...(w.cast || []), { name: '', rel: '', memo: '' }]); renderWorks(); pane.querySelector('tbody tr:last-child input')?.focus(); };
@@ -1300,7 +1303,7 @@ async function notesBody() {
   return `<div class="tbl-tools n-add"><button class="btn brand" data-new="idea">💡 아이디어</button><button class="btn soft" data-new="source">📎 소스</button><button class="btn soft" data-new="seq">🧭 시퀀스</button></div>
     <label class="search n-search"><span aria-hidden="true">⌕</span><input id="noteQ" type="search" placeholder="노트 검색 (제목·내용·#태그·장면)" value="${esc(S.noteQ)}" autocomplete="off"></label>
     <div class="chips"><button class="chip ${t === 'all' ? 'on' : ''}" data-nt="all">전체 ${ns.length}</button>${Object.entries(NTYPE).map(([k, v]) => `<button class="chip ${t === k ? 'on' : ''}" data-nt="${k}">${v.icon} ${v.label} ${cnt(k)}</button>`).join('')}
-      <select id="noteWork" class="chip sel" aria-label="작품으로 거르기"><option value="all">모든 작품</option><option value="common" ${wf === 'common' ? 'selected' : ''}>공통 (우주 설정 등)</option>${S.works.map(w => `<option value="${w.id}" ${wf === w.id ? 'selected' : ''}>${esc(w.title)}</option>`).join('')}</select></div>
+      <select id="noteWork" class="chip sel" aria-label="작품으로 거르기"><option value="all">모든 작품</option><option value="common" ${wf === 'common' ? 'selected' : ''}>공통 (세계관 설정 등)</option>${S.works.map(w => `<option value="${w.id}" ${wf === w.id ? 'selected' : ''}>${esc(w.title)}</option>`).join('')}</select></div>
     <div class="note-grid">${shown.map(noteCard).join('')}</div>
     ${shown.length ? '' : `<div class="empty-box card"><img src="${STK.focus}" alt="">${ns.length ? '찾는 노트가 없어요.' : '참고한 자료, 번뜩인 아이디어, 장면 순서를 여기에 모아 두세요.<br>노트에서 쓰다가 💡 설계 버튼으로 바로 적을 수도 있어요.'}</div>`}
     <p class="mute small">설계 노트는 이 기기에 먼저 저장되고, 드라이브 「집필실/설계 노트.json」으로 기기끼리 맞춰져요.</p>`;
@@ -1347,17 +1350,17 @@ async function noteEditor(id, preset = {}) {
   if (n.type === 'seq' && !n.beats.length) n.beats = [{ id: db.uid('b'), text: '', done: false }];
   let tagStr = (n.tags || []).join(' '); let photoURL = null;
   const epOpts = wid => `<option value="">회차 없음</option>` + (S.eps.get(wid) || []).map((e, i) => `<option value="${e.id}" ${e.id === n.episodeId ? 'selected' : ''}>${esc(Drive.episodeLabel(e, i))} ${esc(e.title || '')}</option>`).join('');
-  const beatsHTML = () => n.beats.map((b, i) => `<div class="beat" data-i="${i}"><span class="bn">${i + 1}</span><label class="bchk" title="다 쓴 장면"><input type="checkbox" data-done ${b.done ? 'checked' : ''}></label><textarea data-bt rows="1" placeholder="장면·비트 (예: 옥상, 시안이 처음 거짓말한다)">${esc(b.text)}</textarea><span class="bbtn"><button type="button" class="icon-btn sm" data-up aria-label="위로" ${i ? '' : 'disabled'}>↑</button><button type="button" class="icon-btn sm" data-dn aria-label="아래로" ${i < n.beats.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="icon-btn sm" data-del aria-label="장면 삭제">✕</button></span></div>`).join('');
+  const beatsHTML = () => n.beats.map((b, i) => `<div class="beat" data-i="${i}"><span class="bn">${i + 1}</span><label class="bchk" title="다 쓴 장면"><input type="checkbox" data-done ${b.done ? 'checked' : ''}></label><textarea data-bt rows="1" placeholder="장면·비트 (예: 옥상, 주인공이 처음 거짓말한다)">${esc(b.text)}</textarea><span class="bbtn"><button type="button" class="icon-btn sm" data-up aria-label="위로" ${i ? '' : 'disabled'}>↑</button><button type="button" class="icon-btn sm" data-dn aria-label="아래로" ${i < n.beats.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="icon-btn sm" data-del aria-label="장면 삭제">✕</button></span></div>`).join('');
   const photoHTML = async () => { if (!n.photoId) return ''; const p = await db.get('photos', n.photoId); if (!p) return ''; if (photoURL) URL.revokeObjectURL(photoURL); photoURL = URL.createObjectURL(p.blob); return `<div class="n-photo"><img src="${photoURL}" alt=""><button type="button" class="btn small ghost" id="nPhotoX">사진 빼기</button></div>`; };
   const T = () => NTYPE[n.type];
   const html = `<div class="seg n-tseg">${Object.entries(NTYPE).map(([k, v]) => `<button type="button" data-ty="${k}" class="${n.type === k ? 'on' : ''}">${v.icon} ${v.label}</button>`).join('')}</div>
-    <label class="fld">제목<input id="nTitle" value="${esc(n.title)}" placeholder="예: 시안의 첫 거짓말 / 2부 전개 / 가스라이팅 논문" maxlength="120"></label>
+    <label class="fld">제목<input id="nTitle" value="${esc(n.title)}" placeholder="예: 주인공의 첫 거짓말 / 2부 전개 / 참고 논문" maxlength="120"></label>
     <div class="n-src" ${n.type === 'source' ? '' : 'hidden'}><label class="fld">출처 (책·작품·사람)<input id="nCite" value="${esc(n.cite || '')}" placeholder="예: 『사회적 동물』 3장" maxlength="200"></label>
       <label class="fld">링크<input id="nUrl" type="url" inputmode="url" value="${esc(n.url || '')}" placeholder="https://"></label></div>
     <label class="fld"><span id="nBodyL">${n.type === 'seq' ? '의도·감정선' : n.type === 'source' ? '내용·인용' : '내용'}</span><textarea id="nBody" class="n-ta" rows="${n.type === 'seq' ? 2 : 6}" placeholder="${esc(T().ph)}">${esc(n.body || '')}</textarea></label>
     <div class="n-seq" ${n.type === 'seq' ? '' : 'hidden'}><div class="fld" style="margin-bottom:2px">장면 순서 <span class="mute small">(↑↓로 순서 바꾸기)</span></div><div id="nBeats" class="beats">${beatsHTML()}</div><button type="button" class="btn soft small" id="nAddBeat">＋ 장면 추가</button></div>
     <div id="nPhotoBox">${await photoHTML()}</div>
-    <label class="fld">태그 (띄어쓰기로 구분)<input id="nTags" value="${esc(tagStr)}" placeholder="예: 우주 시안 복선 2부"></label>
+    <label class="fld">태그 (띄어쓰기로 구분)<input id="nTags" value="${esc(tagStr)}" placeholder="예: 세계관 주인공 복선 2부"></label>
     <div class="row wrap"><label class="fld" style="flex:1 1 150px">작품<select id="nWork"><option value="">공통 (작품 없음)</option>${S.works.map(w => `<option value="${w.id}" ${w.id === n.workId ? 'selected' : ''}>${esc(w.title)}</option>`).join('')}</select></label>
       <label class="fld" style="flex:1 1 150px">회차<select id="nEp">${epOpts(n.workId)}</select></label></div>
     <div class="row wrap n-extra"><button type="button" class="btn ghost small" id="nPhoto">📷 사진 붙이기</button><label class="chk"><input type="checkbox" id="nPin" ${n.pinned ? 'checked' : ''}> 📌 위에 고정</label><button type="button" class="btn ghost small" id="nCopy">📋 ChatGPT용 복사</button></div>
@@ -1434,7 +1437,7 @@ async function renderMy() {
   const st = S.settings;
   const opt = (arr, val, suf) => arr.map(x => `<option value="${x}" ${+val === x ? 'selected' : ''}>${x.toLocaleString()}${suf}</option>`).join('');
   $('#vMy').innerHTML = `<div class="wrap">
-    <div class="hello"><div><h2>연월 작가님의 집필실</h2><p class="hand" style="font-size:1.15rem;margin-top:2px">좋은 문장이 좋은 내일을 만든다 ♡</p></div><img src="${STK.great}" width="96" height="98" alt="" style="animation:float 3.6s ease-in-out infinite"></div>
+    <div class="hello"><div><h2>${esc(penLabel())}의 집필실</h2><p class="hand" style="font-size:1.15rem;margin-top:2px">좋은 문장이 좋은 내일을 만든다 ♡</p></div><img src="${STK.great}" width="96" height="98" alt="" style="animation:float 3.6s ease-in-out infinite"></div>
     <div class="stats"><div class="stat"><b>${streakOf(days)}일</b><small>연속 집필</small></div><div class="stat"><b>${(daily[dkey()] || 0).toLocaleString()}</b><small>오늘 쓴 글자</small></div><div class="stat"><b>${total.toLocaleString()}</b><small>전체 글자 (공백 제외)</small></div><div class="stat"><b>${S.works.length} · ${all.length}</b><small>작품 · 회차</small></div></div>
     <div class="sec-t"><h3>최근 4주 집필</h3><span class="mute small">진할수록 많이 썼어요</span></div>
     <div class="card"><div class="heat">${heat}</div></div>
@@ -1446,9 +1449,10 @@ async function renderMy() {
       <div class="my-row"><div class="t"><b>구글 드라이브</b><small>${linked ? (Drive.hasValidToken() ? '연결됨 · 자동 저장 중' : '다시 연결이 필요해요') : '아직 연결 전 · 원고는 기기에만 저장 중'}</small></div><button class="btn brand small" id="myDrive">${linked ? '관리' : '연결하기'}</button></div>
       <div class="my-row"><div class="t"><b>집필 설정 · 백업</b><small>글꼴, 줄 간격, 자동 버전 저장, 전체 백업</small></div><button class="btn soft small" id="mySet">열기</button></div>
       <div class="my-row"><div class="t"><b>앱으로 설치</b><small>${isInstalled() ? '이미 앱으로 쓰고 있어요 ✓' : installHowTo()}</small></div>${isInstalled() ? '' : `<button class="btn soft small" data-install>${INST.evt ? '설치' : '방법'}</button>`}</div>
+      <div class="my-row"><div class="t"><b>다른 사람과 공유</b><small>주소만 보내면 돼요. 원고는 각자 기기와 각자 드라이브에만 저장돼서 서로 보이지 않아요.</small></div><button class="btn soft small" id="myShare">공유</button></div>
       <div class="my-row"><div class="t"><b>시작 화면 보기</b><small>집필실 첫 화면을 다시 봐요</small></div><button class="btn ghost small" id="mySplash">보기</button></div>
     </div>
-    <p class="mute small" style="margin-top:18px;line-height:1.6">🔒 원고·사진·음성은 이 기기와 아라 님 구글 드라이브에만 저장돼요. 앱 코드가 올라가는 곳에는 원고가 절대 들어가지 않아요.<br>집필실 · 쓰는 오늘, 완성의 내일로</p>
+    <p class="mute small" style="margin-top:18px;line-height:1.6">🔒 원고·사진·음성은 이 기기와 내 구글 드라이브에만 저장돼요. 앱 코드가 올라가는 곳에는 원고가 절대 들어가지 않아요.<br>집필실 · 쓰는 오늘, 완성의 내일로</p>
   </div>`;
   const v = $('#vMy');
   v.querySelector('#myTheme').value = st.theme;
@@ -1457,11 +1461,22 @@ async function renderMy() {
   v.querySelector('#myBreak').onchange = e => { st.breakMin = +e.target.value; saveSettings(); if (!T.running) setMode(T.mode); };
   v.querySelector('#myTheme').onchange = e => { st.theme = e.target.value; saveSettings(); };
   v.querySelector('#myDrive').onclick = openSettings; v.querySelector('#mySet').onclick = openSettings;
+  v.querySelector('#myShare').onclick = shareApp;
   v.querySelector('#mySplash').onclick = () => { sessionStorage.removeItem('jpsSplash'); showSplash(); };
 }
 
+async function shareApp() {
+  const url = location.origin + location.pathname.replace(/index\.html$/, '');
+  await dialog({ title: '다른 사람과 공유', html: `<p>아래 주소를 보내면 누구나 바로 쓸 수 있어요. 처음 열면 빈 집필실로 시작하고, 원고는 그 사람의 기기·드라이브에만 저장돼요.</p>
+    <label class="fld">주소<input id="shUrl" value="${esc(url)}" readonly></label>
+    <p class="small mute">⚠ 구글 드라이브 연결은 앱의 OAuth 설정에 따라 막힐 수 있어요. 그때는 각자 클라이언트 ID를 만들어 [설정]에 넣으면 돼요 → <a href="https://github.com/${esc(REPO)}#readme" target="_blank" rel="noopener">사용·배포 안내</a></p>
+    <p class="small mute">직접 배포: <a href="https://github.com/${esc(REPO)}" target="_blank" rel="noopener">저장소</a>를 포크하고 GitHub Pages를 켜면 돼요. <a href="https://github.com/${esc(REPO)}/releases" target="_blank" rel="noopener">ZIP 받기</a></p>`,
+    buttons: [{ label: '닫기', value: 'cancel' }, { label: '주소 복사', value: 'copy', cls: 'brand' }] }).then(async r => {
+      if (r === 'copy') { if (navigator.share && /Android|iPhone|iPad/i.test(navigator.userAgent)) { try { await navigator.share({ title: '집필실', url }); return; } catch (e) {} } toast(await copyText(url) ? '주소를 복사했어요' : '복사하지 못했어요'); }
+    });
+}
 // ---------- 앱 설치 안내 (웹 → 홈 화면 / 안드로이드 앱) ----------
-const APK_URL = 'https://github.com/lee860506-tech/jipilsil/releases/latest/download/jipilsil.apk';
+const APK_URL = `https://github.com/${REPO}/releases/latest/download/jipilsil.apk`;
 const INST = { evt: null };
 const UA = navigator.userAgent;
 const isAndroid = /Android/i.test(UA), isIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1505,7 +1520,9 @@ async function boot() {
   S.settings = { ...S.settings, ...((await db.kv.get('settings')) || {}) }; applySettings();
   showSplash();
   S.open = new Set((await db.kv.get('openWorks')) || []);
-  await Drive.init(); S.clientId = await Drive.getClientId(); await loadAll(); renderSide(); updateStatus();
+  await Drive.init(); S.clientId = await Drive.getClientId(); await loadAll();
+  if (S.settings.penName === undefined) { S.settings.penName = S.works.length ? (window.YW_CONFIG?.LEGACY_PEN_NAME || '') : ''; await saveSettings(); } // 예전부터 쓰던 기기는 필명 유지
+  renderSide(); updateStatus(); renderSide(); updateStatus();
   setTimeout(() => { if (navigator.onLine) Drive.prepare().catch(() => {}); }, 2500);
   const last = await db.kv.get('lastEp');
   if (last && findEp(last)) { S.cur = last; } // 홈의 「이어 쓰기」로 바로 열 수 있게
