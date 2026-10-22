@@ -26,12 +26,13 @@ export function noteToText(n, { workTitle = '', epLabel = '' } = {}) {
 // local: 노트 배열 (n.dirty, n.base=마지막으로 맞춘 contentKey), localDel: {id:at}
 // remote: {notes:[...], deleted:{id:at}}
 // 반환: { put:[노트], del:[id], deleted:{병합된 삭제 목록}, copies:n, changed:bool(원격에 올릴 게 있는지) }
-export function mergeNotes(local, localDel, remote, newId) {
+export function mergeNotes(local, localDel, remote, newId, opt = {}) {
+  const contentOf = opt.contentOf || noteContentOf, contentKey = opt.contentKey || noteContentKey; const items = opt.items || 'notes';
   const L = new Map(local.map(n => [n.id, n])); const put = [], del = []; let copies = 0, upload = false;
   const deleted = { ...(remote.deleted || {}) };
   for (const [id, at] of Object.entries(localDel || {})) { if (!deleted[id]) upload = true; deleted[id] = Math.max(at, deleted[id] || 0); }
   const R = new Map();
-  for (const r of remote.notes || []) {
+  for (const r of remote[items] || []) {
     if (deleted[r.id] && !(L.get(r.id)?.dirty)) { if (!localDel?.[r.id]) upload = true; continue; }
     R.set(r.id, r);
     const l = L.get(r.id); const kr = contentKey(r);
@@ -52,3 +53,6 @@ export function mergeNotes(local, localDel, remote, newId) {
   }
   return { put, del, deleted, copies, changed: upload };
 }
+
+function noteContentOf(n) { return contentOf(n); }
+function noteContentKey(n) { return contentKey(n); }

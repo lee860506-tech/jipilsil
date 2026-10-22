@@ -1,6 +1,6 @@
 // IndexedDB 래퍼 — 모든 원고는 이 기기에 먼저 저장됩니다 (local-first)
 const DB_NAME = 'jipilsil';
-const DB_VER = 2;
+const DB_VER = 3; // 3: AI 작업(aiwork) 저장소 추가 — 기존 저장소·데이터는 그대로 (추가만)
 let _db;
 
 export function uid(p = '') {
@@ -31,8 +31,9 @@ export function openDB() {
       if (!d.objectStoreNames.contains('tombstones')) d.createObjectStore('tombstones', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('notes')) d.createObjectStore('notes', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+      if (!d.objectStoreNames.contains('aiwork')) { const s = d.createObjectStore('aiwork', { keyPath: 'id' }); s.createIndex('kind', 'kind'); }
     };
-    r.onsuccess = () => { _db = r.result; res(_db); };
+    r.onsuccess = () => { _db = r.result; _db.onversionchange = () => { try { _db.close(); } catch (e) {} _db = null; }; res(_db); };
     r.onerror = () => rej(r.error);
   });
 }
