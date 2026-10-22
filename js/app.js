@@ -6,6 +6,7 @@ import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, de
   makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon, looseKey } from './util.js';
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
 import { NTYPE, noteToText, searchText } from './notes.js';
+import { initAI } from './aiui.js';
 
 const REPO = window.YW_CONFIG?.REPO || 'lee860506-tech/jipilsil';
 const penLabel = () => (S.settings.penName || '').trim() ? S.settings.penName.trim() + ' 작가님' : '작가님';
@@ -203,6 +204,7 @@ Drive.setHooks({
   onChange: async ch => {
     if (ch.settings) { S.settings = { ...S.settings, ...((await db.kv.get('settings')) || {}) }; applySettings(); if (!['note'].includes(S.tab)) rerenderTab(); return; }
     if (ch.notes) { if (ch.copies) toast(`설계 노트 ${ch.copies}개가 두 기기에서 따로 바뀌어서, 드라이브 버전을 「(다른 기기 버전)」 사본으로 함께 남겼어요`, 6000, 'oops'); if (S.tab === 'vault' && S.vaultTab === 'notes' && !$('#dlg').open) renderVault(); if (!$('#panel').hidden && paneTab === 'notes') renderPaneNotes(); return; }
+    if (ch.ai) { if (ch.aiCopies) toast(`AI 작업 ${ch.aiCopies}개가 두 기기에서 따로 바뀌어서, 드라이브 버전을 「(다른 기기 버전)」 사본으로 함께 남겼어요`, 6000, 'oops'); AI.onRemote(); return; }
     if (ch.conflictCleared && ch.episode === S.cur) { refreshConflictBanner(); updateStatus(); }
     if (ch.episode && ch.episode === S.cur && ch.textChanged) {
       const ep = await db.get('episodes', S.cur);
@@ -1157,6 +1159,7 @@ async function openSettings() {
 async function backupAll() {
   await flushSave(); await loadAll(); const files = [];
   for (const w of S.works) (S.eps.get(w.id) || []).forEach((e, i) => files.push({ name: `${safeName(w.title)}/${safeName(Drive.episodeLabel(e, i) + (e.title ? ' ' + e.title : ''))}.txt`, data: '\uFEFF' + e.text.replace(/\n/g, '\r\n') }));
+  try { const af = await AI.backupFile(); if (af) files.push(af); } catch (e) {} // AI 작업(원고와 따로)도 함께
   const d = new Date(); download(makeZip(files), `집필실_백업_${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.zip`);
 }
 
@@ -1782,6 +1785,11 @@ function showSplash() {
 // 집중 모드 친구
 $('.ed-body').insertAdjacentHTML('beforeend', `<img class="focus-buddy" src="${STK.focus}" alt="" width="84" height="80">`);
 window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== S.tab) showTab(t); });
+
+// ================= AI 작업실 (가져오기·분류·비교·작법 교재) =================
+const AI = initAI({ db, S, $, esc, toast, dialog, confirmBox, copyText, download, findEp, labelOf, scheduleSync, decodeText, fmtTime, safeName,
+  openEpisode, snapshot, flushSave, markPending, updateCounts, ed });
+$('#btnAI').onclick = () => AI.open();
 
 // ================= 시작 =================
 async function boot() {

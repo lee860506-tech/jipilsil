@@ -6,6 +6,7 @@ import { normalizeText, canon, pad2, hashText, looseKey, learnNl, unNl } from '.
 import { listRows, castRows, toCSV } from './tables.js';
 import { mergeNotes, contentOf, contentKey } from './notes.js';
 import { uid } from './db.js';
+import { aiContentOf, aiContentKey } from './aiwork.js';
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UP = 'https://www.googleapis.com/upload/drive/v3';
@@ -427,6 +428,9 @@ async function syncOnce() {
 
   // 11) 설계 노트 → 집필실 폴더의 「설계 노트.json」 하나 (노트 단위 양방향 병합, 양쪽 수정은 사본으로 둘 다 보관)
   await syncNotes(rootId);
+  // 12) AI 작업(가져온 자료·비교 기록·작법 교재) → 「AI 작업.json」 (따로 · 같은 방식으로 병합). 문제가 생겨도 다른 동기화는 멈추지 않음
+  try { await syncAI(rootId); await db.kv.set('aiSyncErr', null); }
+  catch (e) { if (e instanceof NeedAuth) throw e; console.warn('AI 작업 동기화', e); await db.kv.set('aiSyncErr', String(e?.message || e)); }
 
   await db.kv.set('lastSync', Date.now());
   hooks.onStatus('synced');
@@ -507,3 +511,47 @@ async function syncNotes(rootId) {
 }
 async function clearDel(done) { const cur = (await db.kv.get('noteDel')) || {}; for (const id of Object.keys(done)) delete cur[id]; await db.kv.set('noteDel', cur); }
 const contentOfId = n => ({ id: n.id, ...contentOf(n), ...(n.conflictOf ? { conflictOf: n.conflictOf } : {}) });
+
+// ---------- AI 작업 (설계 노트와 같은 방식: 기록 단위 병합, 양쪽 수정은 사본으로 둘 다 보관) ----------
+const aiOfId = r => ({ id: r.id, ...aiContentOf(r), ...(r.conflictOf ? { conflictOf: r.conflictOf } : {}) });
+async function syncAI(rootId) {
+  const st = (await db.kv.get('aiSync')) || {};
+  const localDel = (await db.kv.get('aiDel')) || {};
+  let local = await db.all('aiwork');
+  let fileId = st.fileId, ver = null;
+  if (fileId) {
+    try { const f = await api(`${API}/files/${fileId}?fields=id,version,trashed`).then(j); if (f.trashed) fileId = null; else ver = f.version; }
+    catch (e) { if (e instanceof NeedAuth) throw e; if (e.status === 404) fileId = null; else throw e; }
+  }
+  if (!fileId) {
+    const found = await listAll(`${prop('ywKind', 'aiwork')} and trashed=false`);
+    if (found[0]) { fileId = found[0].id; const f = await api(`${API}/files/${fileId}?fields=id,version`).then(j); ver = f.version; }
+  }
+  if (!fileId && !local.length && !Object.keys(localDel).length) return;
+  let remote = { items: [], deleted: {} };
+  const known = fileId && st.fileId === fileId && st.version === ver;
+  if (fileId && !known) {
+    try { remote = JSON.parse(await api(`${API}/files/${fileId}?alt=media`).then(r => r.text())); } catch (e) { if (e instanceof NeedAuth) throw e; if (!(e instanceof SyntaxError)) throw e; }
+    remote.items = remote.items || []; remote.deleted = remote.deleted || {};
+  }
+  let m;
+  if (known) m = { put: [], del: [], deleted: { ...(st.deleted || {}), ...localDel }, copies: 0, changed: local.some(n => n.dirty || !n.base) || Object.keys(localDel).some(id => !(st.deleted || {})[id]) };
+  else m = mergeNotes(local, localDel, remote, () => uid('a'), { contentOf: aiContentOf, contentKey: aiContentKey, items: 'items' });
+  for (const n of m.put) await db.update('aiwork', n.id, c => (c && c.dirty && c.updatedAt !== (local.find(x => x.id === n.id)?.updatedAt)) ? undefined : n);
+  for (const id of m.del) await db.del('aiwork', id);
+  if (m.put.length || m.del.length) hooks.onChange({ ai: true, aiCopies: m.copies });
+  const clr = async done => { const cur = (await db.kv.get('aiDel')) || {}; for (const id of Object.keys(done)) delete cur[id]; await db.kv.set('aiDel', cur); };
+  if (!m.changed && fileId) { await db.kv.set('aiSync', { fileId, version: ver, deleted: m.deleted }); await clr(localDel); return; }
+  local = await db.all('aiwork');
+  const sent = new Map(local.map(n => [n.id, n.updatedAt]));
+  const body = JSON.stringify({ v: 1, app: 'jipilsil', kind: 'aiwork', savedAt: new Date().toISOString(), items: local.map(aiOfId), deleted: m.deleted });
+  if (fileId) { const f = await api(`${API}/files/${fileId}?fields=version`).then(j); if (f.version !== ver) { await db.kv.set('aiSync', { ...st, fileId, version: null }); return; } }
+  let res;
+  if (fileId) { const mp = multipart({ name: 'AI 작업.json' }, body, 'application/json'); res = await api(`${UP}/files/${fileId}?uploadType=multipart&fields=id,version`, { method: 'PATCH', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j); }
+  else { const mp = multipart({ name: 'AI 작업.json', mimeType: 'application/json', parents: [rootId], appProperties: { ywKind: 'aiwork' }, description: '집필실 AI 작업(가져온 자료·비교·작법 교재) 백업 · 앱에서 고쳐 주세요' }, body, 'application/json'); res = await api(`${UP}/files?uploadType=multipart&fields=id,version`, { method: 'POST', headers: { 'Content-Type': mp.type }, body: mp.blob }).then(j); }
+  if (!res.version) { try { res.version = (await api(`${API}/files/${res.id}?fields=version`).then(j)).version; } catch (e) { if (e instanceof NeedAuth) throw e; } }
+  for (const n of local) await db.update('aiwork', n.id, c => c && c.updatedAt === sent.get(n.id) ? (c.dirty = false, c.base = aiContentKey(c), c) : undefined);
+  await db.kv.set('aiSync', { fileId: res.id, version: res.version, deleted: m.deleted });
+  await clr(localDel);
+  hooks.onChange({ ai: true });
+}
