@@ -116,8 +116,8 @@ mark{background:color-mix(in srgb,var(--gold) 40%,transparent);color:inherit;bor
 .ed-body{flex:1;display:flex;min-height:0;position:relative}
 .paper{flex:1;min-width:0;display:flex;justify-content:center;overflow:hidden}
 #editor,.reader{width:100%;max-width:760px;height:100%;border:0;outline:none;resize:none;background:transparent;color:var(--paper-ink);
-  font-family:var(--serif);font-size:var(--ed-size);line-height:var(--ed-lh);padding:22px 22px 40vh;letter-spacing:-.003em;word-break:keep-all;overflow-wrap:anywhere;white-space:pre-wrap;tab-size:2}
-[data-font=sans] #editor,[data-font=sans] .reader{font-family:var(--sans)}
+  font-family:var(--ed-font,"Gowun Batang"),var(--serif);font-size:var(--ed-size);line-height:var(--ed-lh);padding:22px 22px 40vh;letter-spacing:var(--ed-ls,0);word-break:keep-all;overflow-wrap:anywhere;white-space:pre-wrap;tab-size:2}
+[data-font=sans] #editor,[data-font=sans] .reader{font-family:var(--ed-font),var(--sans)}
 #editor::placeholder{color:color-mix(in srgb,var(--mute) 70%,transparent)}
 #editor::selection{background:color-mix(in srgb,var(--neon) 40%,transparent)}
 .reader{overflow:auto}
@@ -601,3 +601,23 @@ body.kb-open .toolbar{display:none}
 .tb.save-btn.warn{background:linear-gradient(135deg,#FFC977,#F2A93B)}
 .tb.save-btn.busy{opacity:.85}
 .tb.save-btn.busy span{animation:float 1s ease-in-out infinite}
+
+/* Aa 글꼴 패널 */
+.tb.aa-btn span{font-family:var(--serif);font-weight:700;font-size:1rem;color:var(--brand)}
+.aa-panel{position:fixed;z-index:90;right:16px;top:118px;width:340px;max-width:calc(100vw - 20px);max-height:calc(100vh - 140px);overflow:auto;background:var(--card);border:1px solid var(--sub);border-radius:20px;box-shadow:0 14px 40px rgba(90,100,232,.22);padding:14px 14px 12px;animation:aaIn .18s ease-out}
+@keyframes aaIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+.aa-h{display:flex;align-items:center;margin-bottom:10px}.aa-h b{flex:1;font-family:var(--title);color:var(--ink)}
+.aa-x{background:var(--violet);border:0;border-radius:50%;width:28px;height:28px;color:var(--mute)}
+.aa-fonts{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:12px}
+.aa-f{position:relative;text-align:left;background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:8px 10px;color:var(--ink);display:flex;flex-direction:column;gap:2px;min-height:58px}
+.aa-f b{font-size:.98rem;font-weight:700}.aa-f i{font-style:normal;font-size:.76rem;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aa-k{position:absolute;right:8px;top:7px;font-family:var(--title);font-size:.6rem;color:var(--point);background:var(--violet);border-radius:8px;padding:1px 6px}
+.aa-f.on{border-color:var(--brand);background:var(--violet);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 14%,transparent)}
+.aa-row{display:flex;align-items:center;gap:8px;margin:8px 2px;font-size:.82rem;color:var(--ink)}
+.aa-row>span{width:58px;flex:none;color:var(--mute)}.aa-row input[type=range]{flex:1;accent-color:var(--brand);min-width:0}
+.aa-row output{width:34px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--brand)}
+.aa-pm{width:30px;height:30px;flex:none;border-radius:50%;border:1px solid var(--sub);background:var(--violet);color:var(--brand);font-weight:700}
+.aa-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.aa-note{font-size:.72rem;color:var(--mute)}
+@media (max-width:899px){.aa-panel{left:10px;right:10px;width:auto;max-width:none;top:auto;bottom:calc(64px + env(safe-area-inset-bottom));max-height:74vh;padding:12px 12px 10px}.aa-fonts{gap:6px;margin-bottom:6px}.aa-f{min-height:0;padding:6px 9px}.aa-f b{font-size:.92rem}.aa-row{margin:5px 2px}.aa-foot{margin-top:6px;padding-top:8px}}
+.aa-f[data-id=penscript] b{font-size:1.3rem!important;line-height:1.1}.aa-f[data-id=penscript] i{font-size:.98rem}

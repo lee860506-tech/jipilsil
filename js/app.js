@@ -411,12 +411,80 @@ ed.addEventListener('keydown', e => {
 function applySettings() {
   const st = S.settings; const r = document.documentElement;
   r.dataset.theme = st.theme; r.style.setProperty('--ed-size', st.fontSize + 'px'); r.style.setProperty('--ed-lh', st.lineH);
-  r.dataset.font = st.font;
+  r.dataset.font = fontOf(st.font).id; loadFont(st.font);
+  r.style.setProperty('--ed-font', fontOf(st.font).fam); r.style.setProperty('--ed-ls', (+st.letterSp || 0) + 'em');
   document.querySelector('meta[name=theme-color]').content = st.theme === 'dark' ? '#14132A' : st.theme === 'sepia' ? '#F4EEE2' : '#F7F5FF';
 }
 async function saveSettings(local) { await db.kv.set('settings', S.settings); if (!local) { await db.kv.set('settingsAt', Date.now()); scheduleSync(4000); } applySettings(); }
-$('#btnFontUp').onclick = () => { S.settings.fontSize = Math.min(30, S.settings.fontSize + 1); saveSettings(); toast(`글자 크기 ${S.settings.fontSize}`); };
-$('#btnFontDown').onclick = () => { S.settings.fontSize = Math.max(13, S.settings.fontSize - 1); saveSettings(); toast(`글자 크기 ${S.settings.fontSize}`); };
+// 글꼴·크기 빠른 설정 (Aa) — 웹 글꼴은 고를 때만 불러옴
+const GF = 'https://fonts.googleapis.com/css2?display=swap&family=';
+const FONTS = [
+  { id: 'serif', name: '고운바탕', kind: '명조', fam: '"Gowun Batang"' },
+  { id: 'nmyeongjo', name: '나눔명조', kind: '명조', fam: '"Nanum Myeongjo"', css: GF + 'Nanum+Myeongjo:wght@400;700' },
+  { id: 'maruburi', name: '마루부리', kind: '명조', fam: 'MaruBuri', css: 'https://hangeul.pstatic.net/hangeul_static/css/maru-buri.css' },
+  { id: 'ridi', name: '리디바탕', kind: '명조', fam: 'RIDIBatang', face: "@font-face{font-family:'RIDIBatang';src:url(https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_twelve@1.0/RIDIBatang.woff) format('woff');font-display:swap}" },
+  { id: 'sans', name: '프리텐다드', kind: '고딕', fam: '"Pretendard Variable",Pretendard', css: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css' },
+  { id: 'ngothic', name: '나눔고딕', kind: '고딕', fam: '"Nanum Gothic"', css: GF + 'Nanum+Gothic:wght@400;700' },
+  { id: 'gdodum', name: '고운돋움', kind: '고딕', fam: '"Gowun Dodum"', css: GF + 'Gowun+Dodum' },
+  { id: 'penscript', name: '나눔손글씨 펜', kind: '손글씨', fam: '"Nanum Pen Script"', css: GF + 'Nanum+Pen+Script' },
+  { id: 'gaegu', name: '개구쟁이', kind: '손글씨', fam: 'Gaegu' },
+];
+const FONT_DEF = { font: 'serif', fontSize: 18, lineH: 1.9, letterSp: 0 };
+const fontOf = id => FONTS.find(f => f.id === id) || FONTS[0];
+const fontLoaded = new Set();
+function loadFont(id) {
+  const f = fontOf(id); if (fontLoaded.has(f.id)) return; fontLoaded.add(f.id);
+  if (f.css) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = f.css; l.dataset.font = f.id; document.head.appendChild(l); }
+  if (f.face) { const st = document.createElement('style'); st.dataset.font = f.id; st.textContent = f.face; document.head.appendChild(st); }
+}
+function setFontSetting(patch) { Object.assign(S.settings, patch); applySettings(); saveSettings(); syncAaPanel(); }
+function syncAaPanel() {
+  const pn = $('#aaPanel'); if (!pn || pn.hidden) return; const st = S.settings;
+  pn.querySelectorAll('.aa-f').forEach(b => b.classList.toggle('on', b.dataset.id === fontOf(st.font).id));
+  $('#aaSize').value = st.fontSize; $('#aaSizeOut').textContent = st.fontSize;
+  $('#aaLh').value = st.lineH; $('#aaLhOut').textContent = (+st.lineH).toFixed(1);
+  $('#aaLs').value = st.letterSp || 0; $('#aaLsOut').textContent = (+(st.letterSp || 0)).toFixed(2);
+}
+function openAa() {
+  let pn = $('#aaPanel');
+  if (!pn) {
+    pn = document.createElement('div'); pn.id = 'aaPanel'; pn.className = 'aa-panel'; pn.setAttribute('role', 'dialog'); pn.setAttribute('aria-label', '글꼴과 크기');
+    pn.innerHTML = `<div class="aa-h"><b>Aa 글꼴과 크기</b><button class="aa-x" id="aaClose" aria-label="닫기">✕</button></div>
+      <div class="aa-fonts">${FONTS.map(f => `<button class="aa-f" data-id="${f.id}" style="font-family:${esc(f.fam)},var(--serif)"><span class="aa-k">${f.kind}</span><b>${f.name}</b><i>쓰는 오늘, 완성의 내일로</i></button>`).join('')}</div>
+      <div class="aa-row"><span>글자 크기</span><button class="aa-pm" id="aaMinus" aria-label="작게">−</button><input type="range" id="aaSize" min="13" max="30" step="1" aria-label="글자 크기"><button class="aa-pm" id="aaPlus" aria-label="크게">＋</button><output id="aaSizeOut"></output></div>
+      <div class="aa-row"><span>줄 간격</span><input type="range" id="aaLh" min="1.4" max="2.6" step="0.1" aria-label="줄 간격"><output id="aaLhOut"></output></div>
+      <div class="aa-row"><span>자간</span><input type="range" id="aaLs" min="-0.05" max="0.15" step="0.01" aria-label="자간"><output id="aaLsOut"></output></div>
+      <div class="aa-foot"><span class="aa-note">원고 전체에 적용 · 기기끼리 동기화</span><button class="btn ghost sm" id="aaReset">기본값</button></div>`;
+    document.body.appendChild(pn);
+    pn.addEventListener('click', e => { const b = e.target.closest('.aa-f'); if (b) { loadFont(b.dataset.id); setFontSetting({ font: b.dataset.id }); } });
+    pn.addEventListener('pointerenter', e => { const b = e.target.closest?.('.aa-f'); if (b) loadFont(b.dataset.id); }, true);
+    $('#aaClose').onclick = closeAa;
+    $('#aaMinus').onclick = () => setFontSetting({ fontSize: Math.max(13, S.settings.fontSize - 1) });
+    $('#aaPlus').onclick = () => setFontSetting({ fontSize: Math.min(30, S.settings.fontSize + 1) });
+    $('#aaSize').oninput = e => setFontSetting({ fontSize: +e.target.value });
+    $('#aaLh').oninput = e => setFontSetting({ lineH: Math.round(+e.target.value * 10) / 10 });
+    $('#aaLs').oninput = e => setFontSetting({ letterSp: Math.round(+e.target.value * 100) / 100 });
+    $('#aaReset').onclick = () => { setFontSetting({ ...FONT_DEF }); toast('글꼴·크기를 기본값으로 돌렸어요'); };
+    document.addEventListener('pointerdown', e => { const p = $('#aaPanel'); if (p && !p.hidden && !p.contains(e.target) && !e.target.closest('#btnAa')) closeAa(); }, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#aaPanel').hidden) closeAa(); });
+  }
+  pn.hidden = false; $('#btnAa').classList.add('on'); syncAaPanel();
+  // 미리보기용으로 손글씨만 빼고 가볍게: 패널 열 때 지금 글꼴만 확실히
+  loadFont(S.settings.font); loadPreviews();
+}
+// 미리보기: 구글 글꼴은 이름·예문 글자만 담은 아주 작은 조각으로 (몇 KB)
+let previewsDone = false;
+function loadPreviews() {
+  if (previewsDone) return; previewsDone = true;
+  const fams = FONTS.filter(f => f.css?.startsWith(GF) && !fontLoaded.has(f.id));
+  if (!fams.length) return;
+  const txt = encodeURIComponent([...new Set([...FONTS.map(f => f.name).join('') + '쓰는 오늘, 완성의 내일로'])].join(''));
+  const l = document.createElement('link'); l.rel = 'stylesheet'; l.dataset.preview = '1';
+  l.href = 'https://fonts.googleapis.com/css2?display=swap&' + fams.map(f => 'family=' + f.css.slice(GF.length).split(':')[0]).join('&') + '&text=' + txt;
+  document.head.appendChild(l);
+}
+function closeAa() { const p = $('#aaPanel'); if (p) p.hidden = true; $('#btnAa').classList.remove('on'); }
+$('#btnAa').onclick = () => ($('#aaPanel') && !$('#aaPanel').hidden) ? closeAa() : openAa();
 function toggleFocus() { document.body.classList.toggle('focus'); $('#btnFocus').classList.toggle('on', document.body.classList.contains('focus')); if (document.body.classList.contains('focus')) toast('집중 모드 · Esc 또는 ◐ 버튼으로 나가기'); }
 $('#btnFocus').onclick = toggleFocus;
 
@@ -1010,8 +1078,8 @@ async function openSettings() {
     <section class="set"><h4>✒ 집필 화면</h4>
       <label class="fld">필명 (인사말에 쓰여요 · 비워도 돼요)<input id="setPen" value="${esc(st.penName || '')}" placeholder="예: 필명" maxlength="20"></label>
       <div class="row wrap"><label class="fld">테마 <select id="setTheme"><option value="light">라벤더 (밝게)</option><option value="dark">밤 (어둡게)</option><option value="sepia">세피아</option></select></label>
-      <label class="fld">본문 글꼴 <select id="setFont"><option value="serif">고운바탕 (명조)</option><option value="sans">프리텐다드 (고딕)</option></select></label>
-      <label class="fld">줄 간격 <select id="setLh"><option>1.6</option><option>1.8</option><option>1.9</option><option>2.1</option><option>2.4</option></select></label>
+      <label class="fld">본문 글꼴 <select id="setFont">${FONTS.map(f => `<option value="${f.id}">${f.name} (${f.kind})</option>`).join('')}</select></label>
+      <label class="fld">줄 간격 <select id="setLh">${[...new Set([1.6, 1.8, 1.9, 2.1, 2.4, +st.lineH])].sort((a, b) => a - b).map(v => `<option>${v}</option>`).join('')}</select></label>
       <label class="fld">자동 버전 저장 <select id="setSnap"><option value="5">5분마다</option><option value="10">10분마다</option><option value="20">20분마다</option><option value="30">30분마다</option></select></label></div>
       <label class="chk"><input type="checkbox" id="setTidy" ${st.tidy ? 'checked' : ''}> 붙여넣을 때 줄 끝 공백·과한 빈 줄 정리</label>
     </section>
@@ -1021,7 +1089,7 @@ async function openSettings() {
     </section>`,
     buttons: [{ label: '닫기', value: 'cancel' }, { label: '저장', value: 'ok', cls: 'gold' }],
     onOpen: f => {
-      f.querySelector('#setTheme').value = st.theme; f.querySelector('#setFont').value = st.font; f.querySelector('#setLh').value = String(st.lineH); f.querySelector('#setSnap').value = String(st.snapMin);
+      f.querySelector('#setTheme').value = st.theme; f.querySelector('#setFont').value = fontOf(st.font).id; f.querySelector('#setLh').value = String(st.lineH); f.querySelector('#setSnap').value = String(st.snapMin);
       f.querySelector('#setTheme').onchange = e => { st.theme = e.target.value; saveSettings(); };
       const cidOf = () => f.querySelector('#setCid').value.trim() || def;
       const saveCid = () => { const v = cidOf(); S.clientId = v; return db.kv.set('clientId', v === def ? '' : v); };

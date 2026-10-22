@@ -453,7 +453,7 @@ export async function resolveConflict(epId, choice, makeCopy) {
 }
 
 // ---------- 설계 노트 (+ 기기끼리 맞출 설정) ----------
-const SET_KEYS = ['penName', 'goal', 'theme', 'font', 'lineH', 'fontSize', 'focusMin', 'breakMin', 'snapMin', 'tidy'];
+const SET_KEYS = ['penName', 'goal', 'theme', 'font', 'lineH', 'fontSize', 'letterSp', 'focusMin', 'breakMin', 'snapMin', 'tidy'];
 const pickSet = o => Object.fromEntries(SET_KEYS.filter(k => k in o).map(k => [k, o[k]]));
 async function syncNotes(rootId) {
   const st = (await db.kv.get('notesSync')) || {};
