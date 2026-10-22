@@ -1,5 +1,5 @@
 // 집필실 서비스워커 — 오프라인에서도 앱이 열리게 (원고 자체는 IndexedDB에 있음)
-const VERSION = 'jps-v9-__BUILD__';
+const VERSION = 'jps-v9b-__BUILD__';
 const SHELL = ['./', 'index.html', 'config.js', 'css/app.css', 'js/app.js', 'js/db.js', 'js/drive.js', 'js/audio.js', 'js/util.js',
   'manifest.webmanifest', 'img/fighting.webp', 'img/great.webp', 'img/focus.webp', 'img/oops.webp', 'img/hero_art.webp', 'img/streak_art.webp', 'img/moonbook.webp', 'js/tables.js', 'js/notes.js', 'icons/logo.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'hangeul.pstatic.net'];

@@ -625,3 +625,16 @@ body.kb-open .toolbar{display:none}
 .aa-note{font-size:.72rem;color:var(--mute)}
 @media (max-width:899px){.aa-panel{left:10px;right:10px;width:auto;max-width:none;top:auto;bottom:calc(64px + env(safe-area-inset-bottom));max-height:74vh;padding:12px 12px 10px}.aa-fonts{gap:6px;margin-bottom:6px}.aa-f{min-height:0;padding:6px 9px}.aa-f b{font-size:.92rem}.aa-row{margin:5px 2px}.aa-foot{margin-top:6px;padding-top:8px}}
 .aa-f[data-id=penscript] b{font-size:1.3rem!important;line-height:1.1}.aa-f[data-id=penscript] i{font-size:.98rem}
+
+/* 알림(토스트) 배치: 글자가 세로로 한 글자씩 꺾이지 않게 */
+.toast,.toast[popover]{box-sizing:border-box;width:max-content;min-width:min(240px,calc(100vw - 32px));max-width:min(420px,calc(100vw - 32px));gap:8px;padding:10px 14px}
+.toast>span{flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:anywhere;line-height:1.45}
+.toast .t-stk{width:34px;flex:none;margin-right:0}
+.toast:has(.t-act){text-align:left}
+.toast .t-act{margin-left:4px;flex:none;white-space:nowrap}
+@media (max-width:480px){
+  .toast:has(.t-act){flex-wrap:wrap;width:calc(100vw - 32px)}
+  .toast:has(.t-act)>span{flex-basis:calc(100% - 46px)}
+  .toast .t-act{margin-left:auto}
+}
+.toast{pointer-events:none}.toast .t-act{pointer-events:auto}

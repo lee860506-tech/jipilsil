@@ -244,6 +244,7 @@ document.addEventListener('pointerdown', e => {
 }, true);
 let nagAt = 0;
 async function authNag(force) { // 정말 다시 로그인해야 할 때만, 눈에 띄게 한 번
+  if (!$('#splash').hidden) { S.nagAfterSplash = true; return; } // 시작 화면 위에는 띄우지 않고, 들어간 뒤 바로 보여 줌
   if (!force && Date.now() - nagAt < 15 * 60_000) return; nagAt = Date.now();
   const n = await pendingCount();
   toast(`드라이브 로그인이 끝났어요${n ? ` · 올릴 것 ${n}건 대기 중` : ''}. 누르면 바로 이어져요 (원고는 기기에 안전해요)`, 12000, 'oops', { label: '다시 연결', fn: reconnect });
@@ -1777,7 +1778,7 @@ document.addEventListener('click', async e => {
 function showSplash() {
   if (sessionStorage.getItem('jpsSplash')) return;
   const sp = $('#splash'); sp.hidden = false; sp.classList.remove('out');
-  $('#btnStart').onclick = () => { sessionStorage.setItem('jpsSplash', '1'); sp.classList.add('out'); setTimeout(() => sp.hidden = true, reduceMotion() ? 0 : 450); };
+  $('#btnStart').onclick = () => { sessionStorage.setItem('jpsSplash', '1'); sp.classList.add('out'); setTimeout(() => { sp.hidden = true; if (S.nagAfterSplash) { S.nagAfterSplash = false; authNag(true); } }, reduceMotion() ? 0 : 450); };
 }
 // 집중 모드 친구
 $('.ed-body').insertAdjacentHTML('beforeend', `<img class="focus-buddy" src="${STK.focus}" alt="" width="84" height="80">`);
