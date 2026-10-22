@@ -694,3 +694,16 @@ body.aiw-on{overflow:hidden}
 @media (max-width:899px){.ai-grid>.fld:first-child{grid-column:1/-1}.ai-grid .fld{font-size:.8rem}.ai-grid select,.ai-grid input{min-width:0}}
 .hk-empty{opacity:.55;font-size:.75em}
 .aiw .row.wrap{max-width:none;margin:10px 0 0;padding:0}
+
+/* 알림(토스트) 배치: 글자가 세로로 한 글자씩 꺾이지 않게 */
+.toast,.toast[popover]{box-sizing:border-box;width:max-content;min-width:min(240px,calc(100vw - 32px));max-width:min(420px,calc(100vw - 32px));gap:8px;padding:10px 14px}
+.toast>span{flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:anywhere;line-height:1.45}
+.toast .t-stk{width:34px;flex:none;margin-right:0}
+.toast:has(.t-act){text-align:left}
+.toast .t-act{margin-left:4px;flex:none;white-space:nowrap}
+@media (max-width:480px){
+  .toast:has(.t-act){flex-wrap:wrap;width:calc(100vw - 32px)}
+  .toast:has(.t-act)>span{flex-basis:calc(100% - 46px)}
+  .toast .t-act{margin-left:auto}
+}
+.toast{pointer-events:none}.toast .t-act{pointer-events:auto}
