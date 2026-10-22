@@ -121,6 +121,10 @@ mark{background:color-mix(in srgb,var(--gold) 40%,transparent);color:inherit;bor
 #editor::placeholder{color:color-mix(in srgb,var(--mute) 70%,transparent)}
 #editor::selection{background:color-mix(in srgb,var(--neon) 40%,transparent)}
 .reader{overflow:auto}
+.reread-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--line);font-size:13px}
+.reread-bar>span{flex:1;min-width:180px}
+.rereading #editor{max-width:680px;line-height:max(var(--ed-lh),2);padding-top:32px}
+.rereading .paper{background:var(--paper)}
 .reader p{margin:0;padding:2px 8px;border-radius:8px;cursor:pointer;transition:background .25s}
 .reader p.blank{min-height:calc(var(--ed-size)*var(--ed-lh))}
 .reader p:hover{background:color-mix(in srgb,var(--card) 80%,transparent)}

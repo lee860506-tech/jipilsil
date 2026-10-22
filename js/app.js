@@ -20,7 +20,7 @@ const S = {
 };
 window.__yw = S; // 테스트·디버그용
 
-const REASON = { auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', 'before-replace': '바꾸기 전', open: '열었을 때' };
+const REASON = { 'before-reread': '재독 수정 전', auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', 'before-replace': '바꾸기 전', open: '열었을 때' };
 
 // ================= 공통 UI =================
 let toastT;
@@ -351,6 +351,7 @@ const ed = $('#editor');
 function updateCrumb() { const ep = findEp(S.cur); if (!ep) return; $('#crumbWork').innerHTML = `${esc(workOf(ep)?.title || '')} <b>· ${esc(labelOf(ep))}</b>`; }
 async function openEpisode(id) {
   if (S.cur && S.cur !== id) { savePos(); await flushSave(); }
+  setReread(false);
   stopAllAudio(); await loadPos();
   const ep = await db.get('episodes', id); if (!ep) return;
   const cached = findEp(id); if (cached) Object.assign(cached, ep);
@@ -367,7 +368,7 @@ async function openEpisode(id) {
   updateStatus(); await restorePos(id);
   if (matchMedia('(min-width: 900px)').matches) ed.focus({ preventScroll: true });
 }
-function closeEditor() { savePos(); db.kv.set('lastView', 'list'); S.cur = null; $('#editorView').hidden = true; $('#empty').hidden = false; document.body.classList.remove('editing'); db.kv.set('lastEp', null); }
+function closeEditor() { setReread(false); savePos(); db.kv.set('lastView', 'list'); S.cur = null; $('#editorView').hidden = true; $('#empty').hidden = false; document.body.classList.remove('editing'); db.kv.set('lastEp', null); }
 $('#btnBack').onclick = async () => { savePos(); db.kv.set('lastView', 'list'); await flushSave(); stopAllAudio(); document.body.classList.remove('editing'); renderSide(); };
 
 function updateCounts() {
@@ -916,6 +917,34 @@ const dict = new Dictation({
 $('#btnMic').onclick = () => { if (dict.active) return dict.stop(); stopReader(); dict.start(); };
 $('#micStop').onclick = () => dict.stop();
 
+// 재독에서도 같은 textarea를 사용해 저장·IME·실행 취소·동기화 경로를 유지한다.
+function setReread(on) {
+  $('#editorView').classList.toggle('rereading', on);
+  $('#rereadBar').hidden = !on;
+  $('#btnReread').classList.toggle('on', on);
+  $('#btnReread').setAttribute('aria-pressed', String(on));
+}
+async function startReread() {
+  const id = S.cur;
+  const ep = findEp(id);
+  if (!ep) return false;
+  if (!$('#rereadBar').hidden) return true;
+  $('#btnReread').disabled = true;
+  try {
+    await snapshot({ ...ep, text: ed.value, title: $('#epTitle').value }, 'before-reread', '재독 수정 전');
+    if (S.cur !== id) return false;
+    stopReader(); setReread(true); ed.focus({ preventScroll: true });
+    return true;
+  } catch (e) { toast('수정 전 원고를 보관하지 못했어요: ' + e.message); return false; }
+  finally { $('#btnReread').disabled = false; }
+}
+$('#btnReread').onclick = () => {
+  if ($('#rereadBar').hidden) startReread();
+  else { stopReader(); setReread(false); flushSave(); ed.focus({ preventScroll: true }); }
+};
+$('#btnRereadClose').onclick = () => { stopReader(); setReread(false); flushSave(); ed.focus({ preventScroll: true }); };
+$('#btnRereadHistory').onclick = () => showPane('hist');
+
 // ================= 오디오: 내 소설 듣기 =================
 let reader;
 function paraEls() { return $$('#reader p'); }
@@ -949,6 +978,14 @@ function readerOpts() { reader.setOpts({ rate: +$('#ttsRate').value, voiceURI: $
 function stopReader() { if ($('#ttsBar').hidden) return; reader.stop(); $('#reader').hidden = true; ed.hidden = false; $('#ttsBar').hidden = true; $('#btnListen').classList.remove('on'); }
 $('#btnListen').onclick = () => $('#ttsBar').hidden ? openReader() : stopReader();
 $('#ttsStop').onclick = stopReader;
+$('#ttsEdit').onclick = async () => {
+  const id = S.cur;
+  const pos = ed.value.split('\n').slice(0, reader.i).reduce((n, p) => n + p.length + 1, 0);
+  stopReader();
+  if (!(await startReread()) || S.cur !== id) return;
+  ed.focus({ preventScroll: true }); ed.setSelectionRange(pos, pos);
+  scrollToCaret(pos);
+};
 $('#ttsPlay').onclick = () => { readerOpts(); reader.playing ? reader.pause() : (reader.i >= reader.paras.length ? reader.play(0) : reader.resume()); };
 $('#ttsRate').oninput = () => { $('#ttsRateOut').textContent = (+$('#ttsRate').value).toFixed(1) + '×'; S.settings.rate = +$('#ttsRate').value; saveSettings(); readerOpts(); if (reader.playing) reader.play(reader.i); };
 $('#ttsVoice').onchange = () => { S.settings.voiceURI = $('#ttsVoice').value; saveSettings(); readerOpts(); if (reader.playing) reader.play(reader.i); };
