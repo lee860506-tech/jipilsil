@@ -349,7 +349,61 @@ $('#btnNewWork').onclick = async () => {
 
 // ================= 집필 화면 =================
 const ed = $('#editor');
-function updateCrumb() { const ep = findEp(S.cur); if (!ep) return; $('#crumbWork').innerHTML = `${esc(workOf(ep)?.title || '')} <b>· ${esc(labelOf(ep))}</b>`; }
+function updateCrumb() { const ep = findEp(S.cur); if (!ep) return; $('#crumbWork').innerHTML = `${esc(workOf(ep)?.title || '')} <b>· ${esc(labelOf(ep))}</b>`; updateEpNav(); }
+// ---------- 이전화 / 다음화 (같은 작품 안, 회차 순서대로) ----------
+function epSiblings() { const ep = findEp(S.cur); if (!ep) return {}; const list = S.eps.get(ep.workId) || []; const i = list.findIndex(e => e.id === ep.id); return { ep, list, i, prev: list[i - 1] || null, next: list[i + 1] || null }; }
+const epName = e => e ? labelOf(e) + (e.title ? ' ' + e.title : '') : '';
+function epEndHTML() {
+  const { ep, prev, next } = epSiblings(); if (!ep) return '';
+  return `<div class="ee-in"><p class="ee-done">${esc(labelOf(ep))} 끝 ♡</p><div class="ee-btns">
+    <button type="button" class="ee-b" data-epnav="-1" ${prev ? '' : 'disabled'}><small>‹ 이전화</small><b>${prev ? esc(epName(prev)) : '첫 회차예요'}</b></button>
+    ${next ? `<button type="button" class="ee-b next" data-epnav="1"><small>다음화 ›</small><b>${esc(epName(next))}</b></button>` : `<button type="button" class="ee-b new" data-epnew><small>마지막 회차예요</small><b>＋ 새 회차</b></button>`}</div></div>`;
+}
+function updateEpNav() {
+  const { ep, prev, next } = epSiblings(); if (!ep) return;
+  $$('[data-epnav="-1"]').forEach(b => { if (!b.closest('.ee-in')) { b.disabled = !prev; b.title = prev ? `이전화: ${epName(prev)} (Alt+←)` : '첫 회차예요'; } });
+  $$('[data-epnav="1"]').forEach(b => { if (!b.closest('.ee-in')) { b.disabled = !next; b.title = next ? `다음화: ${epName(next)} (Alt+→)` : '마지막 회차예요'; } });
+  $('#rbLabel').textContent = labelOf(ep);
+  const end = $('#epEnd'); if (end) end.innerHTML = epEndHTML();
+  const rd = $('#reader'); if (rd && !rd.hidden) { rd.querySelector('.ep-end-r')?.remove(); rd.insertAdjacentHTML('beforeend', `<div class="ep-end ep-end-r">${epEndHTML()}</div>`); }
+  checkEpEnd();
+}
+// 재독(읽기)에서 원고 끝까지 내려오면 아래 빈 여백에 큰 버튼 (글은 가리지 않음)
+function checkEpEnd() {
+  const end = $('#epEnd'); if (!end) return;
+  const reading = $('#editorView').classList.contains('rereading') && !ed.hidden;
+  const atEnd = ed.scrollTop + ed.clientHeight >= ed.scrollHeight - innerHeight * 0.3;
+  end.hidden = !(reading && atEnd);
+}
+ed.addEventListener('scroll', () => { if ($('#editorView').classList.contains('rereading')) checkEpEnd(); }, { passive: true });
+let epNavBusy = false;
+async function goEpisode(dir) {
+  if (epNavBusy) return; const { ep, prev, next } = epSiblings(); const to = dir < 0 ? prev : next; if (!ep || !to) return;
+  epNavBusy = true;
+  try {
+    const reading = !$('#rereadBar').hidden, listening = !$('#ttsBar').hidden;
+    S.pending = true; await flushSave(); // 💾 저장과 같은 길: 바꾸기 전에 이 기기에 먼저 저장
+    { const cur = await db.get('episodes', ep.id); if (S.cur === ep.id && cur && cur.text !== ed.value) { toast('저장이 끝나지 않아 이동하지 않았어요. 💾 저장을 눌러 주세요', 3500, 'oops'); return; } }
+    scheduleSync(2000);
+    await openEpisode(to.id);
+    const top = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => { ed.scrollTop = 0; r(); }))); // 위치 기억(restorePos)보다 나중에: 새 회차는 맨 위부터
+    const hadPos = !!(await loadPos())[to.id];
+    if (!reading && !listening && !hadPos) await top();
+    if (reading) { await startReread(); ed.setSelectionRange(0, 0); if (matchMedia('(max-width: 899px)').matches) ed.blur(); await top(); checkEpEnd(); }
+    else if (listening) { ed.setSelectionRange(0, 0); openReader(); await top(); $('#reader').scrollTop = 0; }
+    if (!$('#findBar').hidden) refind();
+  } finally { epNavBusy = false; }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-epnav]'); if (b && !b.disabled) { e.preventDefault(); goEpisode(+b.dataset.epnav); return; }
+  const n = e.target.closest('[data-epnew]'); if (n) { e.preventDefault(); const { ep } = epSiblings(); if (ep) flushSave().then(() => newEpisode(ep.workId)).then(x => { renderSide(); return openEpisode(x.id); }).then(() => toast('새 회차를 만들었어요', 1800, 'great')); }
+});
+document.addEventListener('keydown', e => {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  if ($('#editorView').hidden || $('#dlg').open || !S.cur) return;
+  if (/Mac|iPhone|iPad/.test(navigator.platform) && e.target === ed) return; // 맥 Option+화살표는 낱말 이동
+  e.preventDefault(); goEpisode(e.key === 'ArrowLeft' ? -1 : 1);
+});
 async function openEpisode(id) {
   if (S.cur && S.cur !== id) { savePos(); await flushSave(); }
   setReread(false);
@@ -924,6 +978,7 @@ function setReread(on) {
   $('#rereadBar').hidden = !on;
   $('#btnReread').classList.toggle('on', on);
   $('#btnReread').setAttribute('aria-pressed', String(on));
+  checkEpEnd();
 }
 async function startReread() {
   const id = S.cur;
@@ -970,6 +1025,7 @@ function openReader() {
   $('#reader').innerHTML = paras.map((p, i) => p.trim() ? `<p data-i="${i}">${esc(p)}</p>` : `<p class="blank" data-i="${i}"></p>`).join('');
   reader.load(paras.map(t => ({ text: t })));
   $('#reader').hidden = false; ed.hidden = true; $('#ttsBar').hidden = false; $('#btnListen').classList.add('on');
+  $('#reader').insertAdjacentHTML('beforeend', `<div class="ep-end ep-end-r">${epEndHTML()}</div>`);
   fillVoices(); $('#ttsRate').value = S.settings.rate || 1; $('#ttsRateOut').textContent = (+$('#ttsRate').value).toFixed(1) + '×'; $('#ttsDialog').checked = !!S.settings.dialogDiff;
   // 커서가 있던 문단부터
   const startPara = ed.value.slice(0, ed.selectionStart).split('\n').length - 1;

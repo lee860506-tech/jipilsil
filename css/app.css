@@ -638,3 +638,29 @@ body.kb-open .toolbar{display:none}
   .toast .t-act{margin-left:auto}
 }
 .toast{pointer-events:none}.toast .t-act{pointer-events:auto}
+
+/* 이전화 / 다음화 */
+.ep-nav{display:flex;gap:2px;flex:none}
+.ep-nav .icon-btn{width:32px;height:32px;font-size:1.25rem;line-height:1;color:var(--brand)}
+.ep-nav .icon-btn:disabled,.rb-nav .btn:disabled,#ttsBar [data-epnav]:disabled{opacity:.35;cursor:default}
+.rb-nav{display:flex;align-items:center;gap:6px;flex:none}
+.rb-nav b{font-family:var(--title);font-size:.8rem;color:var(--brand);min-width:34px;text-align:center}
+.paper{position:relative}
+.ep-end{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none;z-index:5}
+.ep-end[hidden]{display:none}
+.ep-end-r{position:static;margin:28px 0 40vh;pointer-events:auto}
+.ee-in{pointer-events:auto;width:min(560px,calc(100% - 32px));background:var(--card);border:1.5px solid var(--sub);border-radius:20px;box-shadow:var(--shadow);padding:14px;text-align:center}
+.ee-done{margin:0 0 10px;font-family:var(--hand);font-size:1.2rem;color:var(--point);cursor:default}
+.ee-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ee-b{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;border:1.5px solid var(--line);background:var(--bg);border-radius:16px;padding:12px 14px;min-height:64px;color:var(--ink);min-width:0}
+.ee-b small{font-size:.74rem;color:var(--mute);font-weight:600}
+.ee-b b{font-size:.98rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ee-b.next,.ee-b.new{align-items:flex-end;text-align:right;background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(90,100,232,.25)}
+.ee-b.next small,.ee-b.new small{color:rgba(255,255,255,.85)}
+.ee-b:disabled{opacity:.45}
+@media (max-width:899px){
+  .reread-bar{padding:6px 10px;gap:6px}
+  .reread-bar .rb-hint{display:none}
+  .rb-nav{flex:1;justify-content:space-between}
+  .ep-nav .icon-btn{width:30px;height:30px}
+}

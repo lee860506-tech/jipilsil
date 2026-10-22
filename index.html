@@ -82,6 +82,7 @@
           <div class="crumb" id="crumbWork"></div>
           <input id="epTitle" class="ep-title" placeholder="회차 제목 (선택)" maxlength="80" aria-label="회차 제목">
         </div>
+        <div class="ep-nav" role="group" aria-label="회차 이동"><button type="button" class="icon-btn sm" id="epPrev" data-epnav="-1" title="이전화 (Alt+←)" aria-label="이전화">‹</button><button type="button" class="icon-btn sm" id="epNext" data-epnav="1" title="다음화 (Alt+→)" aria-label="다음화">›</button></div>
         <div class="status-wrap"><div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div><button type="button" class="btn small st-act" id="btnStatusAct" hidden></button></div>
       </header>
       <div class="toolbar" role="toolbar" aria-label="집필 도구">
@@ -111,9 +112,10 @@
         <div class="fb-row fb-rep"><label class="fb-in"><span aria-hidden="true">⇄</span><input id="fRep" placeholder="바꿀 말" autocomplete="off" enterkeyhint="done"></label>
           <button type="button" class="btn small soft" id="fRepOne">바꾸기</button><button type="button" class="btn small brand" id="fRepAll">모두</button></div>
       </div>
-      <div id="rereadBar" class="reread-bar" hidden><span>읽으며 바로 수정하세요 · 원고에 자동 저장돼요</span><button type="button" class="btn small ghost" id="btnRereadHistory">수정 전 원고</button><button type="button" class="btn small ghost" id="btnRereadClose">집필로</button></div>
+      <div id="rereadBar" class="reread-bar" hidden><span class="rb-nav"><button type="button" class="btn small soft" id="rbPrev" data-epnav="-1">‹ 이전화</button><b id="rbLabel"></b><button type="button" class="btn small soft" id="rbNext" data-epnav="1">다음화 ›</button></span><span class="rb-hint">읽으며 바로 수정하세요 · 원고에 자동 저장돼요</span><button type="button" class="btn small ghost" id="btnRereadHistory">수정 전 원고</button><button type="button" class="btn small ghost" id="btnRereadClose">집필로</button></div>
       <div class="ed-body">
         <div class="paper">
+          <div id="epEnd" class="ep-end" hidden></div>
           <textarea id="editor" spellcheck="false" placeholder="여기에 원고를 쓰거나 붙여 넣으세요…" aria-label="원고"></textarea>
           <div id="reader" class="reader" hidden></div>
         </div>
@@ -151,7 +153,7 @@
         <label>속도 <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1"><output id="ttsRateOut">1.0×</output></label>
         <select id="ttsVoice" aria-label="목소리"></select>
         <label class="chk"><input type="checkbox" id="ttsDialog"> 대사 다른 목소리</label>
-        <button type="button" class="btn small" id="ttsEdit">✎ 읽던 곳 수정</button>
+        <button type="button" class="btn small soft" id="ttsPrev" data-epnav="-1" aria-label="이전화">‹ 이전화</button><button type="button" class="btn small soft" id="ttsNext" data-epnav="1" aria-label="다음화">다음화 ›</button><button type="button" class="btn small" id="ttsEdit">✎ 읽던 곳 수정</button>
         <button class="btn small ghost" id="ttsStop">닫기</button>
         <div class="hint">문단을 누르면 그 문단부터 읽어요</div>
       </div>
