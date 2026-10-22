@@ -24,13 +24,14 @@ window.__yw = S; // 테스트·디버그용
 const REASON = { 'before-reread': '재독 수정 전', auto: '자동 저장', manual: '직접 저장', 'before-restore': '복원 전', 'before-pull': '드라이브 받기 전', 'before-paste': '붙여넣기 전', 'before-import': '가져오기 전', 'conflict-local': '충돌 · 이 기기', 'conflict-remote': '충돌 · 드라이브', 'before-revise': '수정본 반영 전', 'before-replace': '바꾸기 전', open: '열었을 때' };
 
 // ================= 공통 UI =================
-let toastT;
+let toastH, toastT;
 const STK = { fighting: 'img/fighting.webp', great: 'img/great.webp', oops: 'img/oops.webp', focus: 'img/focus.webp' };
 function toast(msg, ms = 2800, stk, action) {
   const t = $('#toast');
+  clearTimeout(toastH);
   try { if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } else { const d = $('#dlg'); (d.open ? d : document.body).appendChild(t); } } catch (e) {} t.innerHTML = (stk ? `<img class="t-stk" src="${STK[stk]}" alt="">` : '') + `<span>${esc(msg)}</span>` + (action ? `<button type="button" class="btn small brand t-act">${esc(action.label)}</button>` : ''); t.hidden = false; t.classList.add('on');
   if (action) t.querySelector('.t-act').onclick = () => { clearTimeout(toastT); t.classList.remove('on'); t.hidden = true; action.fn(); };
-  clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.hidden = true, 250); }, ms);
+  clearTimeout(toastT); clearTimeout(toastH); toastT = setTimeout(() => { t.classList.remove('on'); toastH = setTimeout(() => t.hidden = true, 250); }, ms); // 앞 알림의 숨기기가 새 알림을 지우지 않게
 }
 function dialog({ title, html = '', buttons = [{ label: '확인', value: 'ok', cls: 'gold' }], wide = false, onOpen }) {
   const d = $('#dlg'); const f = $('#dlgForm');
