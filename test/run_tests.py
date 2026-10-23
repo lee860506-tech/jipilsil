@@ -39,6 +39,8 @@ def page_new(c, tag):
     return pg
 
 def dlg_ok(pg, value='ok'): pg.click(f'#dlg button[value="{value}"]')
+def export_pick(pg, scope, fmt):
+    pg.click('#btnExport'); pg.click(f'#dlg [data-scope="{scope}"]'); pg.click(f'#dlg [data-fmt="{fmt}"]'); dlg_ok(pg, 'go')
 def tab(pg, t): pg.click(f'#tabs [data-tab="{t}"]'); pg.wait_for_timeout(250)
 def new_work(pg, title):
     if not pg.is_visible('#btnNewWork'): tab(pg, 'note')
@@ -151,14 +153,14 @@ with sync_playwright() as p:
     tab(pg, 'note'); pg.locator('.ep [data-act="open"]').first.click(); pg.wait_for_timeout(300)
 
     # ---- 내보내기 ----
-    with pg.expect_download() as d: pg.click('#btnExport'); dlg_ok(pg, 'txt')
+    with pg.expect_download() as d: export_pick(pg, 'ep', 'txt')
     f = DL + d.value.suggested_filename; d.value.save_as(f); t = open(f, encoding='utf-8-sig').read()
     check('TXT 내보내기', t.replace('\r\n', '\n') == v, d.value.suggested_filename)
-    with pg.expect_download() as d: pg.click('#btnExport'); dlg_ok(pg, 'docx')
+    with pg.expect_download() as d: export_pick(pg, 'ep', 'docx')
     f = DL + d.value.suggested_filename; d.value.save_as(f)
     doc = pydocx.Document(f); paras = [x.text for x in doc.paragraphs]
     check('DOCX 내보내기 (python-docx로 열림)', paras[0] == '01화 붉은 새벽' and paras[1] == PARA[0] + ' (1)' and len(paras) > 2000, f'{len(paras)}문단')
-    with pg.expect_download() as d: pg.click('#btnExport'); dlg_ok(pg, 'zip')
+    with pg.expect_download() as d: export_pick(pg, 'work', 'zip')
     f = DL + d.value.suggested_filename; d.value.save_as(f)
     z = zipfile.ZipFile(f); names = z.namelist(); bad = z.testzip()
     inner = pydocx.Document(io.BytesIO(z.read([n for n in names if n.endswith('.docx')][0])))
