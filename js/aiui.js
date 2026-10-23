@@ -249,12 +249,12 @@ export function initAI(X) {
     const before = X.ed.value;
     if (before.replace(/\r\n?/g, '\n') !== cur) { toast('그 사이 원고가 바뀌어서 반영하지 않았어요. 다시 시도해 주세요', 4000, 'oops'); return; }
     await X.snapshot({ ...ep, text: before }, 'before-revise', 'AI 작업실 비교 반영 전');
-    X.ed.value = next; X.markPending(); X.updateCounts(); await X.flushSave();
+    X.uhKeepSet(() => { X.ed.value = next; }); X.markPending(); X.updateCounts(); await X.flushSave();
     c.appliedAt = Date.now(); await save(c);
     toast('비교 결과를 원고에 반영했어요', 7000, 'great', { label: '되돌리기', fn: async () => {
       if (S.cur !== ep.id) await X.openEpisode(ep.id);
       await X.snapshot({ ...findEp(ep.id), text: X.ed.value }, 'before-restore', 'AI 반영 되돌리기 전');
-      X.ed.value = before; X.markPending(); X.updateCounts(); await X.flushSave(); toast('반영 전으로 되돌렸어요 (수정 기록에도 남아 있어요)');
+      X.uhKeepSet(() => { X.ed.value = before; }); X.markPending(); X.updateCounts(); await X.flushSave(); toast('반영 전으로 되돌렸어요 (수정 기록에도 남아 있어요)');
     } });
   }
 

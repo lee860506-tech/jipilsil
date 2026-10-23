@@ -84,7 +84,7 @@
           <input id="epTitle" class="ep-title" placeholder="회차 제목 (선택)" maxlength="80" aria-label="회차 제목">
         </div>
         <div class="ep-nav" role="group" aria-label="회차 이동"><button type="button" class="icon-btn sm" id="epPrev" data-epnav="-1" title="이전화 (Alt+←)" aria-label="이전화">‹</button><button type="button" class="icon-btn sm" id="epNext" data-epnav="1" title="다음화 (Alt+→)" aria-label="다음화">›</button></div>
-        <div class="status-wrap"><div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div><button type="button" class="btn small st-act" id="btnStatusAct" hidden></button></div>
+        <div class="status-wrap"><div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div><button type="button" class="btn small st-act" id="btnStatusAct" hidden></button><div class="undo-grp" role="group" aria-label="되돌리기"><button type="button" class="ur" id="btnUndo" title="실행취소 (Ctrl+Z)" aria-label="실행취소" disabled>↶</button><button type="button" class="ur" id="btnRedo" title="다시실행 (Ctrl+Shift+Z)" aria-label="다시실행" disabled>↷</button></div></div>
       </header>
       <div class="toolbar" role="toolbar" aria-label="집필 도구">
         <button class="tb save-btn" id="btnSave" title="지금 저장 (Ctrl+S) — 기기와 드라이브에 바로"><span>💾</span><b>저장</b></button>
@@ -119,6 +119,7 @@
           <div id="epEnd" class="ep-end" hidden></div>
           <textarea id="editor" spellcheck="false" placeholder="여기에 원고를 쓰거나 붙여 넣으세요…" aria-label="원고"></textarea>
           <div id="reader" class="reader" hidden></div>
+          <button type="button" id="btnTop" class="to-top" title="맨 위로" aria-label="맨 위로" hidden><b aria-hidden="true">↑</b></button>
         </div>
         <aside id="panel" class="panel" hidden>
           <div class="panel-tabs" role="tablist">
