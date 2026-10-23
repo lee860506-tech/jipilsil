@@ -674,3 +674,18 @@ body.kb-open .toolbar{display:none}
   .rb-nav{flex:1;justify-content:space-between}
   .ep-nav .icon-btn{width:30px;height:30px}
 }
+
+/* ---------- 실행취소 · 다시실행 / 맨 위로 ---------- */
+.undo-grp{display:flex;flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;overflow:hidden}
+.undo-grp .ur{width:34px;height:30px;border:0;background:none;color:var(--brand);font-size:1.1rem;line-height:1;padding:0;cursor:pointer}
+.undo-grp .ur+.ur{border-left:1px solid var(--line)}
+.undo-grp .ur:disabled{opacity:.32;cursor:default}
+.undo-grp .ur:not(:disabled):hover,.undo-grp .ur:not(:disabled):active{background:var(--violet)}
+.to-top{position:absolute;right:6px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:7;width:38px;height:38px;border-radius:50%;border:2px solid #fff;background:var(--grad);color:#fff;
+  box-shadow:0 4px 12px rgba(90,100,232,.30);display:flex;align-items:center;justify-content:center;padding:0;opacity:.82;cursor:pointer;animation:topPop .22s ease-out}
+.to-top[hidden]{display:none}
+.to-top b{font-size:1.2rem;line-height:1;font-weight:800}
+.to-top:hover,.to-top:focus-visible{opacity:1}
+.to-top:active{transform:scale(.92)}
+@keyframes topPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:.82}}
+body.focus .to-top{opacity:.7}

@@ -5,6 +5,7 @@ import { Dictation, Reader, Recorder, ttsSupported, sttSupported, recSupported, 
 import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, decodeText, detectEpisodeNo, titleFromFilename,
   makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon, looseKey } from './util.js';
 import * as EX from './exporters.js';
+import { UndoStack } from './history.js';
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
 import { NTYPE, noteToText, searchText } from './notes.js';
 
@@ -632,7 +633,7 @@ async function restoreVersion(v) {
   await flushSave();
   const ep = await db.get('episodes', S.cur);
   await snapshot(ep, 'before-restore', `${fmtTime(v.at)} 버전 복원 전`);
-  ed.value = v.text; markPending(); await flushSave(); updateCounts(); renderHist(); toast('복원했어요');
+  uhKeepSet(() => { ed.value = v.text; }); markPending(); await flushSave(); updateCounts(); renderHist(); toast('복원했어요');
 }
 async function manualSnap() {
   await flushSave(); const ep = await db.get('episodes', S.cur); if (!ep) return;
@@ -760,13 +761,13 @@ $('#btnRevise').onclick = async () => {
   if (mode === 'replace' && e0 > s0) { next = before.slice(0, s0) + ins + before.slice(e0); caret = s0 + ins.length; }
   else { const sep = !before ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'; next = before + sep + ins; caret = next.length; }
   S.pasteChars += [...ins].length;
-  ed.value = next; ed.setSelectionRange(caret, caret); markPending(); updateCounts(); await flushSave();
+  uhKeepSet(() => { ed.value = next; }); ed.setSelectionRange(caret, caret); markPending(); updateCounts(); await flushSave();
   if (mode === 'replace') ed.setSelectionRange(s0, caret);
   keepCaretVisible(true);
   toast(mode === 'replace' ? '선택 영역을 수정본으로 바꿨어요' : '수정본을 뒤에 이어 붙였어요', 7000, 'great', { label: '되돌리기', fn: async () => {
     if (S.cur !== ep.id) await openEpisode(ep.id);
     await snapshot({ ...findEp(ep.id), text: ed.value }, 'before-restore', '수정본 되돌리기 전');
-    ed.value = before; ed.setSelectionRange(s0, e0); markPending(); updateCounts(); await flushSave(); toast('반영 전으로 되돌렸어요 (수정 기록에도 남아 있어요)');
+    uhKeepSet(() => { ed.value = before; }); ed.setSelectionRange(s0, e0); markPending(); updateCounts(); await flushSave(); toast('반영 전으로 되돌렸어요 (수정 기록에도 남아 있어요)');
   } });
 };
 
@@ -828,6 +829,74 @@ async function restorePos(id) {
   const p = (await loadPos())[id]; if (!p) return;
   const L = ed.value.length; ed.setSelectionRange(Math.min(p.sel, L), Math.min(p.end ?? p.sel, L));
   requestAnimationFrame(() => { ed.scrollTop = p.top || 0; });
+}
+
+// ================= 실행취소 · 다시실행 + 맨 위로 =================
+// 브라우저 기본 되돌리기는 글을 코드로 바꾸면(수정본 반영·복원·찾아 바꾸기 등) 끊기고, 휴대폰에서는 키보드가 가려서 쓰기 어려워요.
+// 그래서 "지금 열려 있는 이 회차의 글"에만 쓰는 되돌리기 기록을 메모리에 따로 둬요. (저장·DB·드라이브와는 관계없음)
+// 회차를 옮기거나 드라이브에서 글이 바뀌어 들어오면 기록을 비워서, 다른 회차 글이 섞이지 않아요.
+const UH = new UndoStack(); let uhId = null, uhKeep = 0, uhBusy = false, uhComp = false, uhHadFocus = false;
+const edValueDesc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+Object.defineProperty(ed, 'value', { configurable: true, get() { return edValueDesc.get.call(ed); }, set(v) { edValueDesc.set.call(ed, v); if (uhKeep) uhRecord(false); else uhReset(); } });
+function uhKeepSet(fn) { uhKeep++; try { fn(); } finally { uhKeep--; } } // 이 안에서 글을 바꾸면 되돌리기 기록에 남겨요 (수정본 반영 등)
+function uhSync() {
+  const off = !S.cur || ed.hidden || $('#editorView').hidden;
+  const u = $('#btnUndo'), r = $('#btnRedo'); if (!u || !r) return;
+  u.disabled = off || !UH.canUndo; r.disabled = off || !UH.canRedo;
+}
+function uhReset() { uhId = S.cur; uhComp = false; UH.reset(ed.value); uhSync(); updateTop(); }
+function uhRecord(typing) {
+  if (uhBusy) return; if (uhId !== S.cur) return uhReset(); if (uhComp) return;
+  UH.push(ed.value, typing); uhSync();
+}
+ed.addEventListener('input', e => { if (e.isComposing) return; uhRecord(/^(insertText|insertCompositionText|deleteContent)/.test(e.inputType || '')); });
+ed.addEventListener('compositionstart', () => { uhComp = true; });
+ed.addEventListener('compositionend', () => { uhComp = false; uhRecord(true); }); // 한글 조합 중에는 모았다가 끝나면 한 번에
+function uhApply(dir) {
+  if (!S.cur || ed.hidden || $('#editorView').hidden) return false;
+  if (uhId !== S.cur) uhReset();
+  uhComp = false; uhRecord(true); // 방금 입력한 것까지 기록
+  const r = dir < 0 ? UH.undo(ed.value) : UH.redo(ed.value);
+  if (!r) { uhSync(); return false; }
+  uhBusy = true;
+  try { ed.setRangeText(r.insert, r.at, r.at + r.remove, 'end'); ed.dispatchEvent(new Event('input')); } finally { uhBusy = false; }
+  if (UH.last !== ed.value) uhReset();
+  keepCaretVisible(true); uhSync(); return true;
+}
+function uhBtn(id, dir) {
+  const b = $(id); if (!b) return;
+  b.addEventListener('pointerdown', () => { uhHadFocus = document.activeElement === ed; });
+  b.addEventListener('mousedown', e => e.preventDefault()); // 눌러도 키보드가 내려가지 않게
+  b.addEventListener('click', () => { if (b.disabled) return; uhApply(dir); if ((uhHadFocus || matchMedia('(min-width: 900px)').matches) && document.activeElement !== ed) ed.focus({ preventScroll: true }); });
+}
+uhBtn('#btnUndo', -1); uhBtn('#btnRedo', 1);
+// 키보드 단축키·휴대폰 키보드의 되돌리기도 같은 기록을 써요 (기본 되돌리기는 글을 깨뜨릴 수 있어 막아요)
+ed.addEventListener('beforeinput', e => { if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') { e.preventDefault(); uhApply(e.inputType === 'historyUndo' ? -1 : 1); } });
+ed.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return; const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); uhApply(-1); }
+  else if ((k === 'z' && e.shiftKey) || (k === 'y' && !e.metaKey)) { e.preventDefault(); uhApply(1); }
+});
+new MutationObserver(() => { uhSync(); updateTop(); }).observe(ed, { attributes: true, attributeFilter: ['hidden'] });
+window.__jpsUndo = { UH, apply: uhApply, reset: uhReset };
+
+// 맨 위로: 길게 내려갔을 때만 나타나는 작은 둥근 버튼 (편집·재독 = 글상자, 듣기 = 읽기 화면)
+const topBtn = $('#btnTop'); let topQuiet = 0, topQT;
+const topScroller = () => { const rd = $('#reader'); return rd && !rd.hidden ? rd : ed; };
+function updateTop() {
+  if (!topBtn) return; const el = topScroller();
+  const show = !$('#editorView').hidden && !!S.cur && el.scrollHeight > el.clientHeight * 1.6 && el.scrollTop > Math.max(320, el.clientHeight * 0.8) && Date.now() >= topQuiet;
+  topBtn.hidden = !show;
+  const ee = $('#epEnd'); topBtn.style.bottom = ee && !ee.hidden && ee.offsetHeight ? `${ee.offsetHeight + 36}px` : ''; // 재독 끝의 큰 카드 위로 비켜 줘요
+}
+ed.addEventListener('scroll', updateTop, { passive: true }); $('#reader')?.addEventListener('scroll', updateTop, { passive: true });
+ed.addEventListener('input', e => { if (!e.inputType) return; topQuiet = Date.now() + 2500; updateTop(); clearTimeout(topQT); topQT = setTimeout(updateTop, 2600); }); // 글 쓰는 동안은 글을 가리지 않게 숨겨요
+window.addEventListener('resize', updateTop); window.visualViewport?.addEventListener('resize', updateTop);
+if ($('#epEnd')) new MutationObserver(updateTop).observe($('#epEnd'), { attributes: true, attributeFilter: ['hidden'] });
+if ($('#reader')) new MutationObserver(updateTop).observe($('#reader'), { attributes: true, attributeFilter: ['hidden'] });
+if (topBtn) {
+  topBtn.addEventListener('mousedown', e => e.preventDefault());
+  topBtn.addEventListener('click', () => { const el = topScroller(); el.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
 }
 
 // ================= 충돌 =================
