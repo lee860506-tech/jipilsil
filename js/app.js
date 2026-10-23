@@ -911,8 +911,11 @@ async function refreshConflictBanner() {
 async function resolveUI(id) {
   await flushSave(); const ep = await db.get('episodes', id); if (!ep?.conflict) return;
   const d = diffHTML(ep.conflict.remoteText, ep.text);
+  const rl = looseKey(ep.conflict.remoteText), ll = looseKey(ep.text);
+  const tip = rl && ll.length > rl.length && ll.startsWith(rl) ? '💡 드라이브 글이 이 기기 글의 앞부분이에요. 「내 기기 것」을 고르면 이어 쓴 글이 모두 남아요.'
+    : ll && rl.length > ll.length && rl.startsWith(ll) ? '💡 이 기기 글이 드라이브 글의 앞부분이에요. 「드라이브 것」을 고르면 더 쓴 글이 모두 와요.' : '';
   const r = await dialog({ title: '어느 원고를 쓸까요?', wide: true,
-    html: `<p class="mute small">－ 드라이브에만 있는 줄 ${d.dels} · ＋ 이 기기에만 있는 줄 ${d.adds}. 무엇을 골라도 두 버전 모두 수정 기록에 남아요.</p><div class="diff">${d.html}</div>`,
+    html: `${tip ? `<p class="small">${tip}</p>` : ''}<p class="mute small">－ 드라이브에만 있는 줄 ${d.dels} · ＋ 이 기기에만 있는 줄 ${d.adds}. 무엇을 골라도 두 버전 모두 수정 기록에 남아요.</p><div class="diff">${d.html}</div>`,
     buttons: [{ label: '나중에', value: 'cancel' }, { label: '둘 다 보관 (드라이브 것은 사본 회차로)', value: 'both' }, { label: '드라이브 것', value: 'remote' }, { label: '내 기기 것', value: 'local', cls: 'gold' }] });
   if (r === 'cancel') return;
   const res = await Drive.resolveConflict(id, r, async (e, remoteText) => {
