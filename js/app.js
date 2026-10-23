@@ -4,6 +4,7 @@ import * as Drive from './drive.js';
 import { Dictation, Reader, Recorder, ttsSupported, sttSupported, recSupported, koVoices, onVoicesChanged } from './audio.js';
 import { $, $$, esc, pad2, normalizeText, tidyPaste, counts, fmtTime, fmtDur, decodeText, detectEpisodeNo, titleFromFilename,
   makeZip, docxParts, makeDocx, zipBytes, download, safeName, diffHTML, canon, looseKey } from './util.js';
+import * as EX from './exporters.js';
 import { listRows, castRows, toCSV, STATUS, syncLabel } from './tables.js';
 import { NTYPE, noteToText, searchText } from './notes.js';
 
@@ -304,12 +305,11 @@ $('#workList').addEventListener('click', async e => {
 async function workMenu(wid) {
   const w = S.works.find(x => x.id === wid);
   const r = await dialog({ title: w.title, html: '<p class="mute">작품 메뉴</p>', buttons: [
-    { label: '이름 바꾸기', value: 'rename' }, { label: 'TXT 가져오기', value: 'import' }, { label: '작품 전체 내보내기 (ZIP)', value: 'zip' }, { label: '작품 전체 DOCX', value: 'docx' },
+    { label: '이름 바꾸기', value: 'rename' }, { label: 'TXT 가져오기', value: 'import' }, { label: '내보내기 (TXT·MD·한글·PDF…)', value: 'export' },
     { label: '위로', value: 'up' }, { label: '삭제', value: 'del', cls: 'danger' }, { label: '닫기', value: 'cancel' }] });
   if (r === 'rename') { const t = await ask('작품 이름 바꾸기', '작품 이름', w.title); if (t) await setWorkTitle(wid, t); }
   if (r === 'import') pickImport(wid);
-  if (r === 'zip') exportWorkZip(wid);
-  if (r === 'docx') exportWorkDocx(wid);
+  if (r === 'export') exportDialog(wid, null);
   if (r === 'up') { const i = S.works.indexOf(w); if (i > 0) { [S.works[i - 1], S.works[i]] = [S.works[i], S.works[i - 1]]; for (let k = 0; k < S.works.length; k++) { const id = S.works[k].id; S.works[k].order = k; await db.update('works', id, c => (c.order = k, c)); } renderSide(); } }
   if (r === 'del') {
     const n = (S.eps.get(wid) || []).length;
@@ -1146,15 +1146,56 @@ function stopAllAudio() { dict.stop(); stopReader(); if (rec.mr) endRec(true); }
 
 // ================= 내보내기 =================
 function epFileBase(ep) { return safeName(`${workOf(ep)?.title || ''} ${labelOf(ep)}${ep.title ? ' ' + ep.title : ''}`); }
-$('#btnExport').onclick = async () => {
-  await flushSave(); const ep = await db.get('episodes', S.cur); Object.assign(findEp(S.cur), ep);
-  const r = await dialog({ title: '내보내기', html: '<p class="mute">파일은 이 기기의 다운로드 폴더에 저장돼요.</p>', buttons: [
-    { label: '이 회차 TXT', value: 'txt' }, { label: '이 회차 DOCX', value: 'docx' }, { label: '작품 전체 ZIP', value: 'zip' }, { label: '작품 전체 DOCX', value: 'wdocx' }, { label: '닫기', value: 'cancel' }] });
-  if (r === 'txt') download(new Blob(['\uFEFF' + ep.text.replace(/\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' }), epFileBase(ep) + '.txt');
-  if (r === 'docx') download(makeDocx([{ heading: `${labelOf(ep)}${ep.title ? ' ' + ep.title : ''}`, text: ep.text }]), epFileBase(ep) + '.docx');
-  if (r === 'zip') exportWorkZip(ep.workId);
-  if (r === 'wdocx') exportWorkDocx(ep.workId);
-};
+// 한 곳에서 고르는 내보내기: 범위(이 회차 / 작품 전체) × 형식(TXT · MD · 한글 · PDF · DOCX · ZIP)
+const EXP_FMT = [
+  ['txt', 'TXT', '메모장 어디서나 열려요 (UTF-8)'], ['md', 'MD', '마크다운(.md) · 회차는 제목(#)으로 나눠요'],
+  ['hwpx', '한글', '한컴오피스 한글(.hwpx) 문서 · 한컴오피스 2014 이상에서 열려요'], ['pdf', 'PDF', '한글 글꼴이 파일 안에 들어가서 어디서 열어도 안 깨져요 (A4) · 한자·이모지는 빠져요'],
+  ['docx', 'DOCX', '워드 문서'], ['zip', 'ZIP', '회차별 TXT + 메모 + 전체 DOCX를 한 묶음으로 (작품 전체만)']];
+function expSections(wid, ep) {
+  const w = S.works.find(x => x.id === wid);
+  if (ep) return { title: '', sections: [{ heading: `${labelOf(ep)}${ep.title ? ' ' + ep.title : ''}`, text: ep.text }], base: epFileBase(ep) };
+  const eps = S.eps.get(wid) || [];
+  return { title: w.title, sections: eps.map((e, i) => ({ heading: Drive.episodeLabel(e, i) + (e.title ? ' ' + e.title : ''), text: e.text })), base: `${safeName(w.title)} 전체` };
+}
+async function runExport(wid, epId, fmt) {
+  await flushSave(); await loadAll();
+  const ep = epId ? (await db.get('episodes', epId)) : null; if (ep) Object.assign(findEp(epId), ep);
+  const { title, sections, base } = expSections(wid, ep && findEp(epId));
+  const w = S.works.find(x => x.id === wid);
+  if (!sections.length) return toast('내보낼 회차가 없어요');
+  if (fmt === 'zip') return exportWorkZip(wid);
+  try {
+    if (fmt !== 'txt') toast('파일을 만드는 중이에요…', 20000);
+    let blob, ext = fmt, note = '';
+    if (fmt === 'txt') blob = EX.makeTxt(title, sections);
+    else if (fmt === 'md') blob = EX.makeMd(title, sections);
+    else if (fmt === 'hwpx') blob = EX.makeHwpx(title, sections);
+    else if (fmt === 'docx') blob = makeDocx(sections);
+    else if (fmt === 'pdf') { const F = await EX.loadPdfFont(); const r = await EX.makePdf(title, sections, F); blob = r.blob; if (r.missing) note = ` · 한자·이모지처럼 PDF 글꼴에 없는 글자 ${r.missing}개는 빠졌어요 (한글·DOCX로 저장하면 그대로 있어요)`; }
+    download(blob, `${base}.${ext}`);
+    toast(`${EXP_FMT.find(f => f[0] === fmt)[1]} 파일을 저장했어요${note}`, note ? 7000 : 2800);
+  } catch (err) { console.error(err); toast('내보내지 못했어요: ' + (err.message || err), 5000); }
+}
+async function exportDialog(wid, epId) {
+  const w = S.works.find(x => x.id === wid); const n = (S.eps.get(wid) || []).length;
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem('jpsExport') || '{}'); } catch (e) {}
+  const st = { scope: epId ? (saved.scope === 'work' ? 'work' : 'ep') : 'work', fmt: EXP_FMT.some(f => f[0] === saved.fmt) ? saved.fmt : 'txt' };
+  const draw = f => {
+    if (st.scope === 'ep' && st.fmt === 'zip') st.fmt = 'txt';
+    f.querySelectorAll('[data-scope]').forEach(b => b.classList.toggle('on', b.dataset.scope === st.scope));
+    f.querySelectorAll('[data-fmt]').forEach(b => { b.classList.toggle('on', b.dataset.fmt === st.fmt); if (b.dataset.fmt === 'zip') b.hidden = st.scope === 'ep'; });
+    f.querySelector('#expHint').textContent = EXP_FMT.find(x => x[0] === st.fmt)[2];
+  };
+  const r = await dialog({ title: '내보내기', html:
+    (epId ? `<div class="chips" role="group" aria-label="범위"><button type="button" class="chip" data-scope="ep">이 회차</button><button type="button" class="chip" data-scope="work">작품 전체 · ${n}개 회차</button></div>` : `<p class="mute">「${esc(w.title)}」 전체 · ${n}개 회차</p>`) +
+    `<div class="chips" role="group" aria-label="형식">${EXP_FMT.map(f => `<button type="button" class="chip" data-fmt="${f[0]}">${f[1]}</button>`).join('')}</div><p class="mute" id="expHint"></p><p class="mute">파일은 이 기기의 다운로드 폴더에 저장돼요. 원고는 밖으로 전송되지 않아요.</p>`,
+    buttons: [{ label: '닫기', value: 'cancel' }, { label: '저장', value: 'go', cls: 'gold' }],
+    onOpen: f => { draw(f); f.addEventListener('click', e => { const b = e.target.closest('[data-scope],[data-fmt]'); if (!b) return; if (b.dataset.scope) st.scope = b.dataset.scope; if (b.dataset.fmt) st.fmt = b.dataset.fmt; draw(f); }); } });
+  if (r !== 'go') return;
+  try { localStorage.setItem('jpsExport', JSON.stringify(st)); } catch (e) {}
+  await runExport(wid, epId && st.scope === 'ep' ? epId : null, st.fmt);
+}
+$('#btnExport').onclick = async () => { await flushSave(); const ep = findEp(S.cur); if (ep) exportDialog(ep.workId, ep.id); };
 async function exportWorkZip(wid) {
   await flushSave(); await loadAll();
   const w = S.works.find(x => x.id === wid); const eps = S.eps.get(wid) || [];
@@ -1164,11 +1205,6 @@ async function exportWorkZip(wid) {
   const docx = await zipBytes(makeDocx(eps.map((e, i) => ({ heading: Drive.episodeLabel(e, i) + (e.title ? ' ' + e.title : ''), text: e.text }))));
   files.push({ name: `${safeName(w.title)}/${safeName(w.title)} 전체.docx`, data: docx });
   download(makeZip(files), `${safeName(w.title)}.zip`); toast(`${eps.length}개 회차를 ZIP으로 묶었어요`);
-}
-async function exportWorkDocx(wid) {
-  await flushSave(); await loadAll();
-  const w = S.works.find(x => x.id === wid); const eps = S.eps.get(wid) || [];
-  download(makeDocx(eps.map((e, i) => ({ heading: Drive.episodeLabel(e, i) + (e.title ? ' ' + e.title : ''), text: e.text }))), `${safeName(w.title)} 전체.docx`);
 }
 
 // ================= TXT 가져오기 =================
