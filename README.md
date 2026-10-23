@@ -38,7 +38,7 @@
 - 자동 저장, 오프라인, 수정 기록(자동·직접 버전, 비교, 되돌리기), ChatGPT용 복사·수정본 안전 반영
 - 회차 목록표·인물·설정표(CSV), 아이디어 사진함, 북마크, 음성 메모
 - **설계 노트**: 소스(출처·링크·인용) · 아이디어 · 시퀀스(장면 순서), 원고에서 💡 바로 적기
-- 받아쓰기·낭독, TXT/DOCX/ZIP 내보내기, TXT 가져오기
+- 받아쓰기·낭독, 내보내기(TXT·MD·한글 HWPX·PDF·DOCX·ZIP, 이 회차/작품 전체 — 전부 기기 안에서 만들고 원고는 밖으로 안 나가요), TXT 가져오기
 - 구글 드라이브(drive.file): 회차는 구글 문서, 표는 구글 시트, 충돌 시 덮어쓰지 않고 선택
 
 ## 개인정보
@@ -46,3 +46,6 @@
 
 ## 라이선스
 코드는 [MIT](LICENSE). 마스코트 그림·로고는 제외(저작자 권리). 라이선스는 저작자가 바꿀 수 있어요.
+
+## 글꼴 (PDF 내보내기)
+PDF 내보내기에 쓰는 한글 글꼴은 **나눔명조**(Naver, SIL Open Font License 1.1 — 전문은 `img-b64/jipilsil-serif-OFL.txt.b64`, 배포본의 `img/jipilsil-serif-OFL.txt`)를 필요한 글자만 줄여 담은 파일이에요. 라이선스 규정(Reserved Font Name)에 따라 이름을 **Jipilsil Serif**로 바꿨어요. 파일: `img-b64/jipilsil-serif.ttf.gz.b64` (배포 때 `img/jipilsil-serif.ttf.gz`로 풀려요).
