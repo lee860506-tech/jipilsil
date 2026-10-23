@@ -170,6 +170,13 @@ with sync_playwright() as p:
         check(f'[{tag}] 반영: 고른 곳만 바뀌고 앞뒤 원고 보존', t2.startswith('어젯밤 이야기.\n\n준혁은 주먹을 쥐었다. 그는 창밖을 보았다.') and t2.endswith('\n\n끝.') and '차가운 비가 유리창을 때렸다' in t2, t2)
         vs = [v for v in rows(pg, 'versions') if v['episodeId'] == 'e2' and v['reason'] == 'before-revise']
         check(f'[{tag}] 반영 전 원고가 수정 기록에', any(v['text'] == E2 for v in vs))
+        ed_now = lambda: pg.eval_on_selector('#editor', 'e=>e.value')
+        pg.wait_for_function("()=>!window.__yw.pending && !window.__yw.saving", timeout=8000)
+        check(f'[{tag}] AI 반영 직후 ↶ 실행취소가 켜져 있음', not pg.is_disabled('#btnUndo'))
+        pg.click('#btnUndo'); pg.wait_for_timeout(500); pg.wait_for_function("()=>!window.__yw.pending && !window.__yw.saving", timeout=8000)
+        check(f'[{tag}] AI 반영도 ↶ 실행취소로 원래 원고 (저장도 됨)', ed_now() == E2 and {e['id']: e['text'] for e in rows(pg, 'episodes')}['e2'] == E2)
+        pg.click('#btnRedo'); pg.wait_for_timeout(500); pg.wait_for_function("()=>!window.__yw.pending && !window.__yw.saving", timeout=8000)
+        check(f'[{tag}] ↷ 다시실행 → 반영된 원고', ed_now() == t2 and {e['id']: e['text'] for e in rows(pg, 'episodes')}['e2'] == t2)
         pg.click('#toast .t-act'); pg.wait_for_timeout(700)
         check(f'[{tag}] 되돌리기 → 원래 원고', {e['id']: e['text'] for e in rows(pg, 'episodes')}['e2'] == E2)
         # ---- 4) 작법 교재 ----
