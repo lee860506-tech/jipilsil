@@ -118,13 +118,15 @@ async function flushSave() {
   if (!S.pending || !S.cur) { S.pending = false; updateStatus(); return; }
   S.pending = false; S.saving = true; updateStatus();
   const id = S.cur; const pasted0 = S.pasteChars; const text = $('#editor').value; const title = $('#epTitle').value.trim(); const memo = $('#epMemo').value;
+  const tEdit = S.titleEdit; S.titleEdit = false; // 제목 칸을 직접 고쳤을 때만 제목을 씀 (다른 기기·메뉴에서 바꾼 제목을 옛 글자로 덮지 않게)
   try {
     let delta = 0;
     const u = await db.update('episodes', id, c => {
       if (!c) return undefined;
       delta = [...text].length - [...(c.text || '')].length;
-      if (c.text === text && (c.title || '') === title && (c.memo || '') === memo) return undefined;
-      c.text = text; c.title = title; c.memo = memo; c.rev = (c.rev || 0) + 1; c.dirty = true; c.updatedAt = Date.now();
+      const nt = tEdit ? title : (c.title || '');
+      if (c.text === text && (c.title || '') === nt && (c.memo || '') === memo) return undefined;
+      c.text = text; c.title = nt; c.memo = memo; c.rev = (c.rev || 0) + 1; c.dirty = true; c.updatedAt = Date.now();
       return c;
     });
     if (u) {
@@ -133,7 +135,7 @@ async function flushSave() {
       if (delta > 0) await addWritten(Math.max(0, delta - pasted)); // 붙여넣은 글자는 '오늘의 집필'에서 빼고 직접 쓴 글자만
       await maybeAutoSnapshot(u); refreshEpRow(id); scheduleSync();
     } else S.pasteChars = Math.max(0, S.pasteChars - pasted0);
-  } catch (e) { console.warn(e); toast('저장 실패: ' + e.message); S.pending = true; }
+  } catch (e) { console.warn(e); toast('저장 실패: ' + e.message); S.pending = true; S.titleEdit = S.titleEdit || tEdit; }
   S.saving = false; updateStatus();
 }
 setInterval(() => { if (S.pending && Date.now() - S.lastInput > 3000) flushSave(); }, 3000); // 몇 초마다 자동 저장
@@ -212,7 +214,7 @@ Drive.setHooks({
         const local = ed.value, title = $('#epTitle').value.trim();
         await snapshot({ ...ep, text: local }, 'conflict-local', '충돌: 이 기기 버전');
         await snapshot(ep, 'conflict-remote', '충돌: 드라이브 버전');
-        await db.update('episodes', ep.id, c => c && (c.conflict = { remoteText: c.text, remoteModifiedTime: c.drive?.modifiedTime, fileId: c.drive?.fileId, at: Date.now() }, c.text = local, c.title = title || c.title, c.rev = (c.rev || 0) + 1, c.dirty = true, c.updatedAt = Date.now(), c));
+        await db.update('episodes', ep.id, c => c && (c.conflict = { remoteText: c.text, remoteModifiedTime: c.drive?.modifiedTime, fileId: c.drive?.fileId, at: Date.now() }, c.text = local, c.title = (S.titleEdit && title) || c.title, c.rev = (c.rev || 0) + 1, c.dirty = true, c.updatedAt = Date.now(), c));
         await loadAll(); refreshConflictBanner(); updateStatus();
         toast('다른 기기에서 바뀐 내용과 지금 쓰던 내용이 겹쳐요. 둘 다 보관했으니 골라 주세요.', 5000, 'oops');
         return;
@@ -280,6 +282,7 @@ function renderSide() {
       <ol class="ep-list">${eps.map((e, i) => `<li class="ep ${e.id === S.cur ? 'cur' : ''}" data-e="${e.id}"><button class="ep-open" data-act="open"><span class="en">${esc(Drive.episodeLabel(e, i))}</span><span class="et">${esc(e.title || '')}</span><span class="ec">${counts(e.text).noSp.toLocaleString()}</span>${epBadges(e)}</button><button class="icon-btn sm" data-act="epmenu" aria-label="회차 메뉴">⋯</button></li>`).join('')}
       <li class="ep-add"><button data-act="addep">＋ 회차 추가</button></li></ol></section>`;
   }).join('');
+  syncHeader();
 }
 function refreshEpRow(id) {
   const ep = findEp(id); const li = document.querySelector(`.ep[data-e="${id}"]`); if (!ep || !li) return;
@@ -303,7 +306,7 @@ async function workMenu(wid) {
   const r = await dialog({ title: w.title, html: '<p class="mute">작품 메뉴</p>', buttons: [
     { label: '이름 바꾸기', value: 'rename' }, { label: 'TXT 가져오기', value: 'import' }, { label: '작품 전체 내보내기 (ZIP)', value: 'zip' }, { label: '작품 전체 DOCX', value: 'docx' },
     { label: '위로', value: 'up' }, { label: '삭제', value: 'del', cls: 'danger' }, { label: '닫기', value: 'cancel' }] });
-  if (r === 'rename') { const t = await ask('작품 이름 바꾸기', '작품 이름', w.title); if (t) { await db.update('works', wid, c => (c.title = t, c.dirty = true, c)); w.title = t; renderSide(); scheduleSync(); } }
+  if (r === 'rename') { const t = await ask('작품 이름 바꾸기', '작품 이름', w.title); if (t) await setWorkTitle(wid, t); }
   if (r === 'import') pickImport(wid);
   if (r === 'zip') exportWorkZip(wid);
   if (r === 'docx') exportWorkDocx(wid);
@@ -324,8 +327,8 @@ async function epMenu(eid) {
   const r = await dialog({ title: `${labelOf(ep)} ${ep.title || ''}`, html: '<p class="mute">회차 메뉴 · 순서를 바꾸면 번호(01화, 02화…)가 자동으로 다시 매겨져요.</p>', buttons: [
     { label: '제목 바꾸기', value: 'title' }, { label: '번호 이름 (예: 프롤로그, 외전 1)', value: 'label' }, { label: '▲ 위로', value: 'up' }, { label: '▼ 아래로', value: 'down' },
     ...(ep.remoteMissing ? [{ label: '드라이브에 다시 올리기', value: 'reup' }] : []), { label: '삭제', value: 'del', cls: 'danger' }, { label: '닫기', value: 'cancel' }] });
-  if (r === 'title') { const t = await ask('회차 제목', '제목', ep.title || ''); if (t !== null) { await db.update('episodes', eid, c => (c.title = t, c.dirty = true, c.rev++, c)); ep.title = t; if (S.cur === eid) $('#epTitle').value = t; renderSide(); scheduleSync(); } }
-  if (r === 'label') { const t = await ask('번호 이름', '비워 두면 자동 번호 (예: 03화)', ep.label || '', '프롤로그'); if (t !== null) { await db.update('episodes', eid, c => (c.label = t, c.dirty = true, c.rev++, c)); ep.label = t; renderSide(); updateCrumb(); scheduleSync(); } }
+  if (r === 'title') { const t = await ask('회차 제목', '제목', ep.title || ''); if (t !== null) await setEpTitle(eid, t); }
+  if (r === 'label') { const t = await ask('번호 이름', '비워 두면 자동 번호 (예: 03화)', ep.label || '', '프롤로그'); if (t !== null) await setEpLabel(eid, t); }
   if (r === 'up' || r === 'down') {
     const j = r === 'up' ? i - 1 : i + 1; if (j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]]; list.forEach((x, k) => x.order = k); await renumber(ep.workId); renderSide(); updateCrumb();
@@ -349,7 +352,59 @@ $('#btnNewWork').onclick = async () => {
 
 // ================= 집필 화면 =================
 const ed = $('#editor');
-function updateCrumb() { const ep = findEp(S.cur); if (!ep) return; $('#crumbWork').innerHTML = `${esc(workOf(ep)?.title || '')} <b>· ${esc(labelOf(ep))}</b>`; updateEpNav(); }
+// ---------- 이름 바꾸기 (메뉴·머리줄 어디서든 같은 길로: 저장 → 화면 → 드라이브 동기화) ----------
+async function setWorkTitle(wid, t) {
+  t = (t || '').trim(); const w = S.works.find(x => x.id === wid); if (!w || !t || t === w.title) return;
+  await db.update('works', wid, c => c && (c.title = t, c.dirty = true, c)); w.title = t; renderSide(); scheduleSync();
+}
+async function setEpTitle(eid, t) {
+  t = (t || '').trim(); const ep = findEp(eid); if (!ep) return;
+  if (S.cur === eid && S.pending) await flushSave(); // 쓰던 글을 먼저 저장
+  await db.update('episodes', eid, c => c && (c.title = t, c.dirty = true, c.rev = (c.rev || 0) + 1, c.updatedAt = Date.now(), c)); ep.title = t;
+  if (S.cur === eid) { $('#epTitle').value = t; S.titleEdit = false; }
+  renderSide(); scheduleSync();
+}
+async function setEpLabel(eid, t) { // 비우거나 자동 번호와 같으면 자동 번호로 돌아감
+  const ep = findEp(eid); if (!ep) return;
+  const auto = Drive.episodeLabel({ label: '' }, epIndex(ep)); t = (t || '').trim(); if (t === auto) t = '';
+  if (t === (ep.label || '')) { updateCrumb(); return; }
+  if (S.cur === eid && S.pending) await flushSave();
+  await db.update('episodes', eid, c => c && (c.label = t, c.dirty = true, c.rev = (c.rev || 0) + 1, c.updatedAt = Date.now(), c)); ep.label = t;
+  renderSide(); updateCrumb(); scheduleSync();
+}
+// 머리줄의 제목·화는 그 자리에서 눌러 바로 고침 (제목 칸은 원래 입력칸)
+function syncHeader() {
+  const ep = S.cur && findEp(S.cur); if (!ep) return;
+  const ti = $('#epTitle'); if (!S.titleEdit && document.activeElement !== ti && ti.value !== (ep.title || '')) ti.value = ep.title || '';
+  updateCrumb();
+}
+function updateCrumb() {
+  const ep = findEp(S.cur); if (!ep) return;
+  const box = $('#crumbWork');
+  if (!box.querySelector('input')) box.innerHTML = `<span class="cw" role="button" tabindex="0" title="작품 이름 바꾸기">${esc(workOf(ep)?.title || '')}</span> <b class="cl" role="button" tabindex="0" title="번호 이름 바꾸기 (예: 프롤로그, 외전 1)">· ${esc(labelOf(ep))}</b>`;
+  updateEpNav();
+}
+function crumbEdit(kind) {
+  const ep = findEp(S.cur); if (!ep) return; const box = $('#crumbWork'); if (box.querySelector('input')) return;
+  const el = box.querySelector(kind === 'work' ? '.cw' : '.cl'); if (!el) return;
+  const eid = ep.id; const w = workOf(ep);
+  const inp = document.createElement('input'); inp.className = 'crumb-in'; inp.maxLength = 80;
+  inp.value = kind === 'work' ? (w?.title || '') : labelOf(ep);
+  inp.setAttribute('aria-label', kind === 'work' ? '작품 이름' : '번호 이름 (비우면 자동 번호)'); if (kind === 'label') inp.placeholder = Drive.episodeLabel({ label: '' }, epIndex(ep));
+  const fit = () => { inp.style.width = Math.max(5, [...inp.value].length * 1.1 + 1.6) + 'em'; }; fit(); inp.addEventListener('input', fit);
+  let done = false;
+  const end = async ok => {
+    if (done) return; done = true; const v = inp.value;
+    inp.remove(); box.innerHTML = ''; updateCrumb();
+    if (ok) { if (kind === 'work') await setWorkTitle(w.id, v); else await setEpLabel(eid, v); }
+    updateCrumb();
+  };
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); end(false); } });
+  inp.addEventListener('blur', () => end(true));
+  el.replaceWith(inp); inp.focus(); inp.select();
+}
+$('#crumbWork').addEventListener('click', e => { const t = e.target.closest('.cw,.cl'); if (t) crumbEdit(t.classList.contains('cw') ? 'work' : 'label'); });
+$('#crumbWork').addEventListener('keydown', e => { if (e.key !== 'Enter' && e.key !== ' ') return; const t = e.target.closest?.('.cw,.cl'); if (t) { e.preventDefault(); crumbEdit(t.classList.contains('cw') ? 'work' : 'label'); } });
 // ---------- 이전화 / 다음화 (같은 작품 안, 회차 순서대로) ----------
 function epSiblings() { const ep = findEp(S.cur); if (!ep) return {}; const list = S.eps.get(ep.workId) || []; const i = list.findIndex(e => e.id === ep.id); return { ep, list, i, prev: list[i - 1] || null, next: list[i + 1] || null }; }
 const epName = e => e ? labelOf(e) + (e.title ? ' ' + e.title : '') : '';
@@ -413,7 +468,7 @@ async function openEpisode(id) {
   if (S.tab !== 'note') showTab('note', { keep: true });
   S.cur = id; db.kv.set('lastEp', id);
   $('#empty').hidden = true; $('#editorView').hidden = false; document.body.classList.add('editing');
-  ed.value = ep.text || ''; $('#epTitle').value = ep.title || ''; $('#epMemo').value = ep.memo || '';
+  ed.value = ep.text || ''; $('#epTitle').value = ep.title || ''; S.titleEdit = false; $('#epMemo').value = ep.memo || '';
   updateCrumb(); updateCounts(); refreshConflictBanner();
   $$('.ep.cur').forEach(x => x.classList.remove('cur')); document.querySelector(`.ep[data-e="${id}"]`)?.classList.add('cur');
   if (!S.open.has(ep.workId)) { S.open.add(ep.workId); saveOpen(); renderSide(); }
@@ -433,7 +488,7 @@ function updateCounts() {
 }
 let cntT;
 ed.addEventListener('input', () => { markPending(); clearTimeout(cntT); cntT = setTimeout(updateCounts, 150); });
-$('#epTitle').addEventListener('input', markPending);
+$('#epTitle').addEventListener('input', () => { S.titleEdit = true; markPending(); });
 $('#epMemo').addEventListener('input', markPending);
 ed.addEventListener('blur', flushSave); $('#epTitle').addEventListener('blur', () => { flushSave().then(() => { renderSide(); }); }); $('#epMemo').addEventListener('blur', flushSave);
 // 기기 바꿔 쓰기: 다시 보거나·창으로 돌아오거나·인터넷이 돌아오면 드라이브 확인 (너무 잦지 않게)

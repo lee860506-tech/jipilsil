@@ -96,6 +96,14 @@ mark{background:color-mix(in srgb,var(--gold) 40%,transparent);color:inherit;bor
 .ed-title{flex:1;min-width:0}
 .crumb{font-size:.74rem;color:var(--mute);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .crumb b{color:var(--gold);font-weight:700}
+.crumb .cw,.crumb .cl{cursor:text;border-radius:6px;padding:3px 2px;margin:-3px 0}
+.crumb .cw:hover,.crumb .cl:hover,.crumb .cw:focus-visible,.crumb .cl:focus-visible{background:color-mix(in srgb,var(--gold) 14%,transparent);outline:none}
+.crumb .cl::after,.crumb .cw::after{content:'✎';font-size:.78em;margin-left:3px;opacity:.38}
+.crumb .cw::after{display:none} .crumb .cw:hover::after{display:inline}
+.crumb-in{font:inherit;letter-spacing:inherit;color:var(--ink,inherit);background:color-mix(in srgb,var(--gold) 12%,transparent);border:0;border-bottom:2px dashed var(--gold);border-radius:6px 6px 0 0;padding:1px 4px;outline:none;max-width:60vw;min-width:5em;box-sizing:content-box;vertical-align:baseline}
+.crumb b .crumb-in{color:var(--gold);font-weight:700}
+.ep-title:hover{box-shadow:0 2px 0 color-mix(in srgb,var(--mute) 30%,transparent)}
+.ep-title:focus{box-shadow:0 2px 0 var(--gold)}
 .ep-title{width:100%;border:0;background:transparent;font-family:var(--title);font-weight:800;font-size:1.35rem;padding:2px 0;outline:none}
 .ep-title::placeholder{color:color-mix(in srgb,var(--mute) 60%,transparent)}
 .save-status{display:flex;align-items:center;gap:7px;font-size:.78rem;padding:6px 11px;border-radius:999px;background:var(--card);border:1px solid var(--line);white-space:nowrap;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
