@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<title>집필실 · 쓰는 오늘, 완성의 내일로</title>
+<meta name="description" content="집필실 — 초안부터 재독까지, 나만의 창작 메이트. 작품·회차 관리, 자동 저장, 구글 드라이브, 음성 입력과 낭독">
+<meta name="theme-color" content="#F7F5FF">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gaegu:wght@700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="css/app.css">
+<script src="config.js"></script>
+</head>
+<body>
+<!-- 시작 화면 -->
+<div id="splash" class="splash" hidden>
+  <div class="sp-sky" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="sp-inner">
+    <img class="sp-logo" src="icons/logo.svg" alt="" width="92" height="92">
+    <h1 class="wordmark">집필실</h1>
+    <p class="sp-tag">오늘도, 한 걸음 더! ♡</p>
+    <img class="sp-stk" src="img/fighting.webp" alt="오늘도 파이팅! 하는 마스코트" width="260" height="257">
+    <button class="btn brand big" id="btnStart">집필 시작하기 →</button>
+    <p class="sp-sub">한 문장씩, 이야기가 된다 ♡</p>
+  </div>
+</div>
+
+<div id="shell">
+  <nav id="tabs" aria-label="메뉴">
+    <div class="rail-logo"><img src="icons/logo.svg" alt="" width="40" height="40"><b class="wordmark sm">집필실</b></div>
+    <button data-tab="home" class="on"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/></svg><span>홈</span></button>
+    <button data-tab="works"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.3 9.5 4.3 12 6c2.5-1.7 5.5-1.7 8-.5v13c-2.5-1.2-5.5-1.2-8 .5-2.5-1.7-5.5-1.7-8-.5z"/><path d="M12 6v13"/></svg><span>작품</span></button>
+    <button data-tab="note"><svg viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></svg><span>노트</span></button>
+    <button data-tab="vault"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="4.5" rx="1.5"/><path d="M5 9.5v9a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5v-9"/><path d="M10 13h4"/></svg><span>보관함</span></button>
+    <button data-tab="my"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.8 4-5.5 7.5-5.5s6.3 1.7 7.5 5.5"/></svg><span>마이</span></button>
+  </nav>
+  <div id="views">
+    <section id="vHome" class="view on" aria-label="홈"></section>
+    <section id="vWorks" class="view" aria-label="작품" hidden></section>
+    <section id="vNote" class="view" aria-label="노트" hidden>
+<div id="app" class="note-app">
+  <!-- 서재(작품·회차) -->
+  <aside id="side" aria-label="작품 목록">
+    <header class="side-head">
+      <div class="brand">
+        <img src="icons/logo.svg" alt="" width="36" height="36">
+        <div><h1>노트</h1><p class="sub">작품과 회차를 골라 이어 써요</p></div>
+      </div>
+      <button class="icon-btn" id="btnSettings" title="설정" aria-label="설정">⚙︎</button>
+    </header>
+    <div class="side-tools">
+      <label class="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="모든 작품·노트에서 검색" autocomplete="off"></label>
+      <div class="row">
+        <button class="btn gold" id="btnNewWork">＋ 새 작품</button>
+        <button class="btn ghost" id="btnImport" title="TXT 가져오기">TXT 가져오기</button>
+      </div>
+    </div>
+    <div id="searchResults" class="search-results" hidden></div>
+    <nav id="workList" class="work-list"></nav>
+    <footer class="side-foot">
+      <div id="syncLine" class="sync-line"></div>
+    </footer>
+  </aside>
+
+  <!-- 집필 화면 -->
+  <main id="main">
+    <div id="empty" class="empty">
+      <img class="empty-stk" src="img/fighting.webp" alt="" width="180" height="178">
+      <h2>오늘의 원고를 열어 주세요</h2>
+      <p>왼쪽에서 작품과 회차를 고르거나, 새 작품을 만들어 시작하세요.<br>ChatGPT에서 쓴 초안은 그대로 붙여 넣으면 자동으로 저장돼요.</p>
+    </div>
+    <section id="editorView" hidden>
+      <header class="ed-head">
+        <button class="icon-btn only-mobile" id="btnBack" aria-label="목록으로">‹</button>
+        <div class="ed-title">
+          <div class="crumb" id="crumbWork"></div>
+          <input id="epTitle" class="ep-title" placeholder="회차 제목 (선택)" maxlength="80" aria-label="회차 제목">
+        </div>
+        <div class="ep-nav" role="group" aria-label="회차 이동"><button type="button" class="icon-btn sm" id="epPrev" data-epnav="-1" title="이전화 (Alt+←)" aria-label="이전화">‹</button><button type="button" class="icon-btn sm" id="epNext" data-epnav="1" title="다음화 (Alt+→)" aria-label="다음화">›</button></div>
+        <div class="status-wrap"><div id="saveStatus" class="save-status" role="status" aria-live="polite"><i></i><span>저장 완료</span></div><button type="button" class="btn small st-act" id="btnStatusAct" hidden></button><div class="undo-grp" role="group" aria-label="되돌리기"><button type="button" class="ur" id="btnUndo" title="실행취소 (Ctrl+Z)" aria-label="실행취소" disabled>↶</button><button type="button" class="ur" id="btnRedo" title="다시실행 (Ctrl+Shift+Z)" aria-label="다시실행" disabled>↷</button></div></div>
+      </header>
+      <div class="toolbar" role="toolbar" aria-label="집필 도구">
+        <button class="tb save-btn" id="btnSave" title="지금 저장 (Ctrl+S) — 기기와 드라이브에 바로"><span>💾</span><b>저장</b></button>
+        <button class="tb aa-btn" id="btnAa" title="글꼴·크기·줄 간격" aria-haspopup="dialog"><span>Aa</span><b>글꼴</b></button>
+        <button class="tb" id="btnMic" title="말해서 글쓰기"><span>🎙</span><b>받아쓰기</b></button>
+        <button class="tb" id="btnReread" title="읽으며 바로 수정 · 원고에 자동 저장" aria-pressed="false"><span>📖</span><b>재독</b></button>
+        <button class="tb" id="btnListen" title="내 소설 듣기"><span>🔊</span><b>듣기</b></button>
+        <button class="tb" id="btnRecord" title="아이디어 녹음"><span>⏺</span><b>녹음</b></button>
+        <button class="tb" id="btnSnap" title="지금 버전 저장 (Ctrl+Shift+S)"><span>✦</span><b>버전 저장</b></button>
+        <button class="tb" id="btnCopy" title="ChatGPT로 가져갈 원고 복사"><span>📋</span><b>복사</b></button>
+        <button class="tb" id="btnRevise" title="ChatGPT 수정본 안전하게 반영"><span>✎</span><b>수정본 반영</b></button>
+        <button class="tb" id="btnFind" title="찾기·바꾸기 (Ctrl+F)"><span>🔍</span><b>찾기</b></button>
+        <button class="tb" id="btnNote" title="설계 노트에 바로 적기 (원고 자리는 그대로)"><span>💡</span><b>설계</b></button>
+        <button class="tb" id="btnMark" title="이 문단 북마크"><span>🔖</span><b>북마크</b></button>
+        <button class="tb" id="btnTimerTb" title="집필 타이머"><span>⏱</span><b id="tbTimer">타이머</b></button>
+        <button class="tb" id="btnPanel" title="메모·음성·버전"><span>☰</span><b>메모·기록</b></button>
+        <button class="tb" id="btnExport" title="내보내기"><span>⇩</span><b>내보내기</b></button>
+        <button class="tb" id="btnFocus" title="집중 모드"><span>◐</span><b>집중</b></button>
+        <div class="tb-grow"></div>
+      </div>
+      <div id="findBar" class="find-bar" role="search" aria-label="이 회차에서 찾기" hidden>
+        <div class="fb-row"><label class="fb-in"><span aria-hidden="true">🔍</span><input id="fQ" type="search" placeholder="이 회차에서 찾기" autocomplete="off" enterkeyhint="search"><output id="fCount" aria-live="polite"></output></label>
+          <button type="button" class="icon-btn sm" id="fPrev" aria-label="이전">↑</button><button type="button" class="icon-btn sm" id="fNext" aria-label="다음">↓</button>
+          <button type="button" class="chip" id="fCase" aria-pressed="false" title="대소문자 구분">Aa</button><button type="button" class="chip" id="fRepToggle" aria-expanded="false" title="바꾸기">⇄</button>
+          <button type="button" class="icon-btn sm" id="fClose" aria-label="찾기 닫기">✕</button></div>
+        <div class="fb-row fb-rep"><label class="fb-in"><span aria-hidden="true">⇄</span><input id="fRep" placeholder="바꿀 말" autocomplete="off" enterkeyhint="done"></label>
+          <button type="button" class="btn small soft" id="fRepOne">바꾸기</button><button type="button" class="btn small brand" id="fRepAll">모두</button></div>
+      </div>
+      <div id="rereadBar" class="reread-bar" hidden><span class="rb-nav"><button type="button" class="btn small soft" id="rbPrev" data-epnav="-1">‹ 이전화</button><b id="rbLabel"></b><button type="button" class="btn small soft" id="rbNext" data-epnav="1">다음화 ›</button></span><span class="rb-hint">읽으며 바로 수정하세요 · 원고에 자동 저장돼요</span><button type="button" class="btn small ghost" id="btnRereadHistory">수정 전 원고</button><button type="button" class="btn small ghost" id="btnRereadClose">집필로</button></div>
+      <div class="ed-body">
+        <div class="paper">
+          <div id="epEnd" class="ep-end" hidden></div>
+          <textarea id="editor" spellcheck="false" placeholder="여기에 원고를 쓰거나 붙여 넣으세요…" aria-label="원고"></textarea>
+          <div id="reader" class="reader" hidden></div>
+          <button type="button" id="btnTop" class="to-top" title="맨 위로" aria-label="맨 위로" hidden><b aria-hidden="true">↑</b></button>
+        </div>
+        <aside id="panel" class="panel" hidden>
+          <div class="panel-tabs" role="tablist">
+            <button role="tab" data-tab="memo" class="on">메모</button>
+            <button role="tab" data-tab="notes">설계</button>
+            <button role="tab" data-tab="voice">음성 메모</button>
+            <button role="tab" data-tab="hist">수정 기록</button>
+            <button class="icon-btn close" id="btnPanelClose" aria-label="닫기">✕</button>
+          </div>
+          <div class="panel-body" data-pane="memo">
+            <textarea id="epMemo" placeholder="이 회차의 메모 — 복선, 감정선, 다음 화 떡밥…"></textarea>
+          </div>
+          <div class="panel-body" data-pane="notes" hidden>
+            <div id="paneNotes" class="pane-notes"></div>
+          </div>
+          <div class="panel-body" data-pane="voice" hidden>
+            <div id="voiceList" class="voice-list"></div>
+          </div>
+          <div class="panel-body" data-pane="hist" hidden>
+            <div id="histList" class="hist-list"></div>
+          </div>
+        </aside>
+      </div>
+      <footer class="ed-foot">
+        <span id="cntAll">0자</span><span id="cntNoSp">공백 제외 0자</span><span id="cntWords">0단어</span><span id="cntPages" title="200자 원고지 기준">원고지 0매</span>
+        <span class="grow"></span><span id="syncBadge"></span>
+      </footer>
+      <!-- 받아쓰기 바 -->
+      <div id="micBar" class="float-bar" hidden><span class="dot rec"></span><span id="micText">듣고 있어요… 말해 보세요</span><button class="btn small" id="micStop">멈추기</button></div>
+      <!-- 낭독 바 -->
+      <div id="ttsBar" class="float-bar tts" hidden>
+        <button class="btn small" id="ttsPlay">⏸ 일시정지</button>
+        <label>속도 <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1"><output id="ttsRateOut">1.0×</output></label>
+        <select id="ttsVoice" aria-label="목소리"></select>
+        <label class="chk"><input type="checkbox" id="ttsDialog"> 대사 다른 목소리</label>
+        <button type="button" class="btn small soft" id="ttsPrev" data-epnav="-1" aria-label="이전화">‹ 이전화</button><button type="button" class="btn small soft" id="ttsNext" data-epnav="1" aria-label="다음화">다음화 ›</button><button type="button" class="btn small" id="ttsEdit">✎ 읽던 곳 수정</button>
+        <button class="btn small ghost" id="ttsStop">닫기</button>
+        <div class="hint">문단을 누르면 그 문단부터 읽어요</div>
+      </div>
+      <!-- 녹음 바 -->
+      <div id="recBar" class="float-bar" hidden><span class="dot rec"></span><span id="recTime">00:00</span><span class="hint">아이디어 녹음 중</span><button class="btn small gold" id="recStop">저장</button><button class="btn small ghost" id="recCancel">취소</button></div>
+    </section>
+  </main>
+</div>
+
+    </section>
+    <section id="vVault" class="view" aria-label="보관함" hidden></section>
+    <section id="vMy" class="view" aria-label="마이" hidden></section>
+  </div>
+</div>
+
+<!-- 집필 타이머 -->
+<div id="timerView" class="timer-view" hidden role="dialog" aria-label="집필 타이머">
+  <div class="tv-card">
+    <button class="icon-btn tv-close" id="tvClose" aria-label="닫기">✕</button>
+    <img class="tv-stk" id="tvStk" src="img/focus.webp" alt="" width="200" height="190">
+    <div class="tv-mode"><button data-m="focus" class="on">집중 25분</button><button data-m="break">쉬기 5분</button></div>
+    <div class="tv-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="54" class="tr-bg"/><circle cx="60" cy="60" r="54" class="tr-fg" id="tvArc"/></svg><div class="tv-time" id="tvTime">25:00</div></div>
+    <div class="tv-btns"><button class="btn ghost" id="tvReset">처음으로</button><button class="btn brand" id="tvGo">시작</button></div>
+    <p class="mute small" id="tvInfo">오늘 집중 0회</p>
+  </div>
+</div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+<div id="toast" class="toast" role="alert" popover="manual" hidden></div>
+<div id="kbPill" class="kb-pill" aria-hidden="true" hidden><i></i><span></span></div>
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<input type="file" id="fileImport" accept=".txt,text/plain" multiple hidden>
+<input type="file" id="photoCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="photoPick" accept="image/*" multiple hidden>
+
+<script>window.__YW_BOOT=Date.now()</script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
