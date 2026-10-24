@@ -898,8 +898,17 @@ window.addEventListener('resize', updateTop); window.visualViewport?.addEventLis
 if ($('#epEnd')) new MutationObserver(updateTop).observe($('#epEnd'), { attributes: true, attributeFilter: ['hidden'] });
 if ($('#reader')) new MutationObserver(updateTop).observe($('#reader'), { attributes: true, attributeFilter: ['hidden'] });
 if (topBtn) {
-  topBtn.addEventListener('mousedown', e => e.preventDefault());
-  topBtn.addEventListener('click', () => { const el = topScroller(); el.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+  topBtn.addEventListener('pointerdown', e => e.preventDefault()); topBtn.addEventListener('mousedown', e => e.preventDefault()); // 눌러도 키보드·커서 유지
+  topBtn.addEventListener('click', () => {
+    const el = topScroller();
+    // 글상자에 커서가 있으면 브라우저가 커서 쪽으로 다시 끌어내려요 → 커서도 글 맨 앞으로 (글 내용·되돌리기 기록은 그대로)
+    if (el === ed && document.activeElement === ed) {
+      ed.setSelectionRange(0, 0); el.scrollTop = 0;
+      requestAnimationFrame(() => { el.scrollTop = 0; setTimeout(() => { el.scrollTop = 0; updateTop(); }, 120); });
+      return;
+    }
+    el.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  });
 }
 
 // ================= 충돌 =================
