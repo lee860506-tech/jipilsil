@@ -1,0 +1,43 @@
+{
+  "name": "집필실 · 쓰는 오늘, 완성의 내일로",
+  "short_name": "집필실",
+  "description": "초안부터 재독까지, 나만의 창작 메이트 — 작품·회차, 자동 저장, 구글 드라이브, 음성 입력·낭독",
+  "id": "/jipilsil/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F7F5FF",
+  "theme_color": "#F7F5FF",
+  "lang": "ko",
+  "categories": [
+    "productivity",
+    "books"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
