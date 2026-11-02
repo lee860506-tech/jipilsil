@@ -684,6 +684,10 @@ body.kb-open .toolbar{display:none}
 .to-top{position:absolute;right:6px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:7;width:38px;height:38px;border-radius:50%;border:2px solid #fff;background:var(--grad);color:#fff;
   box-shadow:0 4px 12px rgba(90,100,232,.30);display:flex;align-items:center;justify-content:center;padding:0;opacity:.82;cursor:pointer;animation:topPop .22s ease-out}
 .to-top[hidden]{display:none}
+/* 📸 스크린샷: 컴퓨터(넓은 화면)에서만 */
+.shot-btn{display:none;flex:none;width:32px;height:30px;margin-left:6px;border:1px solid var(--line);background:var(--card);border-radius:999px;font-size:.95rem;line-height:1;padding:0;cursor:pointer}
+.shot-btn:hover,.shot-btn:focus-visible{background:var(--violet)} .shot-btn:active{transform:scale(.92)} .shot-btn[aria-busy="true"]{opacity:.5;cursor:progress}
+@media (min-width:900px){ .shot-btn{display:inline-block} }
 .to-top b{font-size:1.2rem;line-height:1;font-weight:800}
 .to-top:hover,.to-top:focus-visible{opacity:1}
 .to-top:active{transform:scale(.92)}

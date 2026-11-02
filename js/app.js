@@ -908,6 +908,74 @@ if (topBtn) {
   });
 }
 
+// ================= 📸 스크린샷 (컴퓨터용) =================
+// 지금 보이는 화면을 PNG로: 기기 안에서만 그림(html2canvas, js/vendor), 원고·DB·저장·동기화는 건드리지 않아요
+let h2cP = null;
+const loadH2C = () => h2cP || (h2cP = window.html2canvas ? Promise.resolve(window.html2canvas) : new Promise((res, rej) => {
+  const sc = document.createElement('script'); sc.src = 'js/vendor/html2canvas-pro.min.js';
+  sc.onload = () => res(window.html2canvas); sc.onerror = () => { h2cP = null; rej(new Error('html2canvas')); }; document.head.appendChild(sc);
+}));
+const shotName = () => {
+  const ep = S.cur && findEp(S.cur); const w = ep && workOf(ep); const d = new Date(); const p2 = n => String(n).padStart(2, '0');
+  return `집필실_${safeName(w?.title || '화면').replace(/\s+/g, '_')}_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.png`;
+};
+async function takeShot() {
+  const btn = $('#btnShot'); if (btn?.getAttribute('aria-busy') === 'true') return;
+  btn?.setAttribute('aria-busy', 'true');
+  try {
+    const h2c = await loadH2C(); try { await document.fonts?.ready; } catch (e) {}
+    const scale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+    const bg = getComputedStyle(document.body).backgroundColor;
+    // 크기 없는 SVG 그림(로고)은 캔버스에 안 그려질 때가 있어 미리 PNG로 바꿔 둬요 (복사본에만 씀)
+    const imgs = [...document.querySelectorAll('img')]; const svgPng = new Map();
+    await Promise.all(imgs.map(async (im, i) => {
+      if (!/\.svg(\?|#|$)/i.test(im.currentSrc || im.src) || !im.offsetParent) return;
+      try {
+        const w = im.clientWidth || im.width, h = im.clientHeight || im.height; if (!w || !h) return;
+        const svg = await (await fetch(im.currentSrc || im.src)).text();
+        const fixed = svg.replace(/<svg\b/, `<svg width="${w * scale}" height="${h * scale}"`);
+        const src = URL.createObjectURL(new Blob([fixed], { type: 'image/svg+xml' }));
+        const tmp = new Image(); tmp.src = src; await tmp.decode();
+        const cv = document.createElement('canvas'); cv.width = w * scale; cv.height = h * scale;
+        cv.getContext('2d').drawImage(tmp, 0, 0, cv.width, cv.height); URL.revokeObjectURL(src);
+        svgPng.set(String(i), cv.toDataURL('image/png')); im.dataset.shotI = i;
+      } catch (e) {}
+    }));
+    const canvas = await h2c(document.body, {
+      x: window.scrollX, y: window.scrollY, width: innerWidth, height: innerHeight, windowWidth: innerWidth, windowHeight: innerHeight,
+      scale, backgroundColor: bg && bg !== 'rgba(0, 0, 0, 0)' ? bg : '#ffffff', useCORS: false, logging: false,
+      ignoreElements: el => el.id === 'btnShot' || el.id === 'toast' || el.id === 'btnTop' || el.id === 'confetti' || el.classList?.contains('cheer'),
+      onclone: doc => {
+        // 복제본에서 애니메이션이 처음부터 다시 돌면 흐리게 찍혀요 → 멈춘 상태로
+        const fz = doc.createElement('style'); fz.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}'; doc.head.appendChild(fz);
+        if (svgPng.size) doc.querySelectorAll('img[data-shot-i]').forEach(c => { const u = svgPng.get(c.dataset.shotI); if (u) { c.removeAttribute('srcset'); c.src = u; } });
+        // 글상자(textarea)는 보이는 자리(스크롤 위치) 그대로 그리도록 같은 모양의 글 상자로 바꿔 그려요 (복사본에서만)
+        document.querySelectorAll('textarea').forEach((ta, i) => {
+          const c = doc.querySelectorAll('textarea')[i]; if (!c || ta.hidden || !ta.offsetParent) return;
+          const cs = getComputedStyle(ta); const div = doc.createElement('div');
+          for (const k of ['font', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color', 'padding', 'border', 'borderRadius', 'background', 'textAlign', 'textIndent', 'wordBreak', 'overflowWrap', 'tabSize', 'boxSizing', 'width', 'height', 'margin']) div.style[k] = cs[k];
+          div.style.whiteSpace = 'pre-wrap'; div.style.overflow = 'hidden'; div.style.position = 'relative'; div.style.display = 'block';
+          const inner = doc.createElement('div'); inner.textContent = ta.value || ''; inner.style.transform = `translateY(${-ta.scrollTop}px)`;
+          if (!ta.value && ta.placeholder) { inner.textContent = ta.placeholder; inner.style.opacity = '.5'; }
+          div.appendChild(inner); c.replaceWith(div);
+        });
+      },
+    });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('blob');
+    const name = shotName(); download(blob, name);
+    const canCopy = !!(navigator.clipboard?.write && window.ClipboardItem);
+    toast(`📸 찰칵! ${name} 저장했어요`, 5000, 'great', canCopy ? { label: '클립보드에 복사', fn: async () => {
+      try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('📋 스크린샷을 복사했어요. 붙여 넣기만 하면 돼요', 2800, 'great'); }
+      catch (e) { toast('이 브라우저에서는 복사가 안 돼요. 저장된 PNG를 써 주세요', 3500, 'oops'); }
+    } } : null);
+  } catch (e) { console.warn('screenshot', e); toast('스크린샷을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요', 3500, 'oops'); }
+  finally { btn?.removeAttribute('aria-busy'); document.querySelectorAll('img[data-shot-i]').forEach(im => im.removeAttribute('data-shot-i')); }
+}
+$('#btnShot')?.addEventListener('mousedown', e => e.preventDefault()); // 눌러도 커서·포커스 그대로
+$('#btnShot')?.addEventListener('click', takeShot);
+window.__jpsShot = { take: takeShot, name: shotName };
+
 // ================= 충돌 =================
 async function refreshConflictBanner() {
   const id = S.cur; const ep = id && await db.get('episodes', id);
